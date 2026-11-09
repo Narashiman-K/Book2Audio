@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Optional
@@ -91,8 +93,13 @@ def cmd_doctor(args) -> int:
 
     ok_all = True
 
-    # python
-    print(f"[+] Python {sys.version.split()[0]}")
+    # system & platform
+    import platform
+    cpu_arch = platform.machine()
+    proc_desc = os.environ.get("PROCESSOR_IDENTIFIER", "") or platform.processor()
+    print(f"[+] System: Python {sys.version.split()[0]} on {platform.system()} ({cpu_arch})")
+    if proc_desc:
+        print(f"    CPU info: {proc_desc[:65]}")
 
     # ffmpeg
     from .audio import find_ffmpeg_info
@@ -117,10 +124,17 @@ def cmd_doctor(args) -> int:
         print(f"[+] WinRT voices: {len(voices)} installed "
               f"({len(natural)} natural — e.g. {[v['name'] for v in natural][:2]})")
         wanted = cfg.get_path("tts.voice", "Ava")
-        if not any(wanted.lower() in v["name"].lower() for v in voices):
-            ok_all = False
-            print(f"[-] Voice '{wanted}' not found. Install it: Settings > Accessibility "
-                  f"> Narrator > Add natural voices. Or pick from list above.")
+        has_wanted = any(wanted.lower() in v["name"].lower() for v in voices)
+        has_ava = any("ava" in v["name"].lower() for v in voices)
+        has_andrew = any("andrew" in v["name"].lower() for v in voices)
+        if has_wanted:
+            print(f"[+] Active voice '{wanted}' is installed and available.")
+        else:
+            print(f"[-] Configured voice '{wanted}' not found in WinRT.")
+        if not (has_ava or has_andrew):
+            print("    [!] Windows 11 Natural voices (Ava / Andrew) not yet installed.")
+            print("        Install free in Windows: Settings > Accessibility > Narrator")
+            print("        > 'Add natural voices' > Download 'Microsoft Ava (Natural)'.")
     else:
         if sys.platform == "win32":
             ok_all = False
@@ -166,22 +180,178 @@ def cmd_doctor(args) -> int:
 
     # ollama
     import requests
+    from .prosody.llm import OllamaProsody
     url = cfg.get_path("llm.url", "http://localhost:11434")
     try:
         r = requests.get(f"{url}/api/tags", timeout=5)
         models = [m["name"] for m in r.json().get("models", [])]
-        print(f"[+] Ollama reachable at {url}: {len(models)} model(s) {models[:4]}")
-        if not models:
-            ok_all = False
-            print("[-] No models pulled. Suggested:  ollama pull qwen2.5:3b")
+        prosody = OllamaProsody(cfg)
+        picked = prosody.pick_model()
+        if picked:
+            print(f"[+] Ollama reachable at {url}: model '{picked}' selected ({len(models)} models installed)")
+        else:
+            print(f"[i] Ollama reachable at {url}: {len(models)} model(s) installed {models[:4]}")
+            print("    [!] No safe non-reasoning instruction model found (reasoning models like gpt-oss/qwen3 skipped).")
+            print("        Rule-based prosody engine will be used.")
     except Exception:
         print("[i] Ollama not running — rule-based prosody will be used "
-              "(install: https://ollama.com, then: ollama pull qwen2.5:3b)")
+              "(install: https://ollama.com, then: ollama pull llama3.1:8b)")
+
+    # 1-sentence synthesis probe test
+    print("\n[+] Running 1-sentence audio synthesis probe...")
+    try:
+        from .tts import create_engine
+        from .tts.base import ChunkJob
+        import tempfile
+        import time
+        engine = create_engine(cfg, cfg.get_path("style", "warm"))
+        with tempfile.TemporaryDirectory() as td:
+            t0 = time.time()
+            res = engine.synthesize_batch(
+                [ChunkJob(id="probe", text="Audiobook probe verification successful.", ssml="Audiobook probe verification successful.")],
+                Path(td)
+            )
+            t_taken = time.time() - t0
+            if res and res[0].ok and Path(res[0].path).stat().st_size > 100:
+                print(f"[+] Synthesis probe passed [{engine.name} / {engine.chosen_voice}]: "
+                      f"{t_taken:.2f}s ({Path(res[0].path).stat().st_size} bytes)")
+            else:
+                print(f"[-] Synthesis probe failed: {res[0].error if res else 'no output'}")
+    except Exception as e:
+        print(f"[-] Synthesis probe error: {e}")
 
     print()
     print("All core checks passed." if ok_all else
           "Some required pieces are missing — see [-] lines above.")
     return 0 if ok_all else 1
+
+
+def cmd_bench(args) -> int:
+    """Benchmark LLM planning and TTS synthesis throughput on 5 paragraphs."""
+    import time
+    import tempfile
+    from .config import apply_overrides, load_config
+    from .extract import extract_book
+    from .prosody.llm import OllamaProsody
+    from .prosody.rules import RulesEngine
+    from .prosody.ssml import build_ssml
+    from .tts.base import ChunkJob
+    from .tts import create_engine
+
+    cfg = load_config(args.config)
+    overrides = {}
+    if getattr(args, "engine", None):
+        overrides["tts.engine"] = args.engine
+    if getattr(args, "voice", None):
+        overrides["tts.voice"] = args.voice
+    if getattr(args, "llm", None):
+        overrides["llm.provider"] = args.llm
+    if getattr(args, "clone_voice", None):
+        overrides["tts.xtts.clone_voice"] = args.clone_voice
+        overrides["tts.engine"] = "xtts"
+    apply_overrides(cfg, overrides)
+
+    sample_file = args.book or (Path(__file__).resolve().parent.parent / "samples" / "the_lantern_keeper.md")
+    book = extract_book(Path(sample_file), cfg)
+    all_paras = []
+    for ch in book.chapters:
+        all_paras.extend(ch.paragraphs)
+        if len(all_paras) >= 5:
+            break
+    sample_paras = all_paras[:5]
+    if not sample_paras:
+        print("[-] Error: No paragraphs found to benchmark.")
+        return 1
+
+    total_words = sum(len(p.text.split()) for p in sample_paras)
+    total_chars = sum(len(p.text) for p in sample_paras)
+
+    print("=========================================================")
+    print("                book2audio Benchmark                     ")
+    print("=========================================================")
+    print(f"Input Sample: 5 real paragraphs ({total_words} words, {total_chars} characters)\n")
+
+    # 1. Benchmark Prosody Planner
+    llm_provider = cfg.get_path("llm.provider", "auto")
+    t0 = time.time()
+    if llm_provider == "off":
+        planner = RulesEngine(cfg, "warm")
+        plans = [planner.plan_paragraph(p.text, p.id) for p in sample_paras]
+        planner_name = "Rule-based engine"
+    else:
+        llm = OllamaProsody(cfg, "warm")
+        model = llm.pick_model() if llm.available() else None
+        if model:
+            llm.model = model
+            planner_name = f"Ollama ({model})"
+            plans = [llm.plan_paragraph(p.text, p.id) for p in sample_paras]
+        else:
+            planner = RulesEngine(cfg, "warm")
+            planner_name = "Rule-based engine (Ollama skipped)"
+            plans = [planner.plan_paragraph(p.text, p.id) for p in sample_paras]
+    t_plan = time.time() - t0
+    plan_wps = total_words / max(0.001, t_plan)
+    print(f"[1/2] Prosody Planning [{planner_name}]:")
+    print(f"      Time taken:   {t_plan:.2f}s  ({plan_wps:.1f} words/sec)\n")
+
+    # 2. Benchmark TTS Synthesis
+    engine = create_engine(cfg, cfg.get_path("style", "warm"))
+    print(f"[2/2] TTS Synthesis [{engine.name} / {engine.chosen_voice}]:")
+
+    from .prosody.ssml import build_ssml, build_plain_text, build_sapi_xml, compute_global_prosody
+    from .segment import split_sentences
+    gpros = compute_global_prosody(cfg.get_path("tts.speed", 12), cfg.get_path("tts.pitch", 2), cfg)
+    pauses = cfg.get_path("pauses", {})
+    style_name = cfg.get_path("style", "warm")
+
+    jobs = []
+    for p, plan in zip(sample_paras, plans):
+        sentences = split_sentences(p.text, int(cfg.get_path("extract.max_sentence_chars", 200)))
+        if engine.name == "sapi":
+            markup = build_sapi_xml(p.text, sentences, plan, gpros["rate_pct"], gpros["pitch_pct"], style_name, pauses)
+        elif engine.name in ("piper", "xtts", "silent"):
+            markup = build_plain_text(p.text, sentences, plan)
+        else:
+            markup = build_ssml(p.text, sentences, plan, gpros["rate_pct"], gpros["pitch_pct"], style_name, pauses)
+        jobs.append(ChunkJob(id=p.id, text=p.text, ssml=markup, rate_delta=plan.rate_delta))
+
+    with tempfile.TemporaryDirectory() as td:
+        t0 = time.time()
+        results = engine.synthesize_batch(jobs, Path(td))
+        t_synth = time.time() - t0
+
+    ok_results = [r for r in results if r.ok]
+    if not ok_results:
+        print(f"      [-] Synthesis failed: {results[0].error if results else 'Unknown error'}")
+        return 1
+
+    synth_wps = total_words / max(0.001, t_synth)
+    total_time = t_plan + t_synth
+    overall_wps = total_words / max(0.001, total_time)
+
+    print(f"      Time taken:   {t_synth:.2f}s  ({synth_wps:.1f} words/sec)")
+    print(f"      Total Time:   {total_time:.2f}s  ({overall_wps:.1f} combined words/sec)\n")
+
+    # 3. Projections for standard book lengths
+    print("---------------------------------------------------------")
+    print("              Projected Book Build Times                 ")
+    print("---------------------------------------------------------")
+    projections = [
+        ("Short Story", 10_000),
+        ("Novella", 40_000),
+        ("Standard Novel", 90_000),
+    ]
+    for label, count in projections:
+        proj_sec = count / max(0.001, overall_wps)
+        mins = proj_sec / 60.0
+        hrs = mins / 60.0
+        if hrs >= 1.0:
+            formatted = f"{hrs:.1f} hours ({mins:.0f} mins)"
+        else:
+            formatted = f"{mins:.1f} minutes"
+        print(f"  * {label:18} ({count:,} words): {formatted}")
+    print("=========================================================\n")
+    return 0
 
 
 def cmd_demo(args) -> int:
@@ -234,6 +404,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("doctor", help="check environment (ffmpeg, voices, ollama)")
     d.set_defaults(func=cmd_doctor)
+
+    b = sub.add_parser("bench", help="benchmark LLM & TTS throughput and project novel build times")
+    b.add_argument("book", nargs="?", help="optional book to benchmark (default: sample book)")
+    b.add_argument("--engine", choices=["auto", "winrt", "sapi", "piper", "xtts", "silent"])
+    b.add_argument("--voice", help="voice name substring")
+    b.add_argument("--clone-voice", metavar="WAV", help="clone WAV sample for xtts benchmark")
+    b.add_argument("--llm", choices=["auto", "ollama", "off"])
+    b.set_defaults(func=cmd_bench)
 
     e = sub.add_parser("demo", help="convert the bundled sample book")
     e.add_argument("--out", default="output")

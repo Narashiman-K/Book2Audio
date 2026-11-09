@@ -150,8 +150,9 @@ def assemble_chapter(
         tmp_wav = Path(td) / "chapter.wav"
         chapter.export(str(tmp_wav), format="wav")
 
-        # loudness normalize (broadcast-style) + optional global tempo + mp3
-        filters = [f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11"]
+        # High-pass filter at 90 Hz cuts sub-bass rumble, plosives, and end-of-sentence "woof"
+        # artifacts before loudness normalization, preventing loudnorm volume-pumping.
+        filters = ["highpass=f=90", f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11"]
         if tempo and abs(tempo - 1.0) > 0.01:
             t = max(0.5, min(2.0, tempo))
             filters.append(f"atempo={t}")

@@ -94,8 +94,13 @@ foreach ($j in $job.jobs) {
     $r = [ordered]@{ id = $j.id; ok = $false; bytes = 0; error = ''; content_type = '' }
     try {
         $ssml = [System.IO.File]::ReadAllText($j.ssml_path, [System.Text.Encoding]::UTF8)
-        $winrtStream = Await ($synth.SynthesizeSsmlToStreamAsync($ssml)) `
-            ([Windows.Media.SpeechSynthesis.SpeechSynthesisStream])
+        if ($ssml.TrimStart().StartsWith("<speak")) {
+            $winrtStream = Await ($synth.SynthesizeSsmlToStreamAsync($ssml)) `
+                ([Windows.Media.SpeechSynthesis.SpeechSynthesisStream])
+        } else {
+            $winrtStream = Await ($synth.SynthesizeTextToStreamAsync($ssml)) `
+                ([Windows.Media.SpeechSynthesis.SpeechSynthesisStream])
+        }
 
         $r.content_type = "$($winrtStream.ContentType)"
         $netStream = [System.IO.WindowsRuntimeStreamExtensions]::AsStreamForRead($winrtStream)

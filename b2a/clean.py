@@ -55,6 +55,10 @@ def clean_paragraph_text(text: str) -> str:
     text = _HYPHEN_WRAP_RE.sub(r"\1\2 ", text)          # word-\nwrap -> wordwrap
     text = text.replace("\u00ad", "")                    # soft hyphen
     text = text.replace("\n", " ")
+    # Normalize speech breaks: dashes and semicolons -> clean conversational pauses
+    text = re.sub(r"\s*[—–]\s*", ", ", text)
+    text = re.sub(r";\s*", ", ", text)
+    text = re.sub(r"\.{4,}", "...", text)
     text = re.sub(r"\s([,.;:!?])", r"\1", text)          # stray space before punctuation
     text = re.sub(r"([,;:])\s(?=[\w\"'])", r"\1 ", text)
     text = text.replace('""', '"')

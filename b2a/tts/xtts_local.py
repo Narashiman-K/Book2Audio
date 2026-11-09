@@ -189,6 +189,30 @@ class XttsTTS(BaseTTS):
             log.warning("Clone sample is only %.1fs of speech — 10-60 s of clean "
                         "reading gives a much better clone.", dur)
 
+    @staticmethod
+    def _trim_trailing_silence(wav_path: Path, threshold_db: float = -40.0) -> None:
+        """Trim trailing low-energy samples/breath intake from the synthesized WAV clip."""
+        try:
+            import soundfile as sf
+            import numpy as np
+            data, sr = sf.read(str(wav_path))
+            if len(data) == 0:
+                return
+            abs_data = np.abs(data)
+            max_val = np.max(abs_data)
+            if max_val == 0:
+                return
+            thresh_val = max_val * (10 ** (threshold_db / 20.0))
+            indices = np.where(abs_data > thresh_val)[0]
+            if len(indices) > 0:
+                # Keep 50ms smooth decay padding after speech to avoid abrupt cut
+                pad = int(sr * 0.05)
+                end_idx = min(len(data), indices[-1] + pad)
+                trimmed = data[:end_idx]
+                sf.write(str(wav_path), trimmed, sr)
+        except Exception:
+            pass
+
     # ---------- synthesis ----------
     def synthesize_batch(self, jobs: List[ChunkJob], out_dir: Path) -> List[ChunkResult]:
         self._check_sample()
@@ -204,15 +228,30 @@ class XttsTTS(BaseTTS):
         for job in jobs:
             wav_path = out_dir / f"{job.id}.wav"
             try:
-                # plain text (XTTS has no SSML); punctuation + native speed
-                # carry the prosody plan
-                tts.tts_to_file(
-                    text=job.text,
-                    language=self.language,
-                    file_path=str(wav_path),
-                    speed=self._speed_for(job.rate_delta),
-                    **speaker_kwargs,
-                )
+                # plain text (XTTS has no SSML); punctuation + native speed carry prosody.
+                # Lower temperature (0.65) and higher repetition penalty (2.5) cut babbling/stutter.
+                try:
+                    tts.tts_to_file(
+                        text=job.text,
+                        language=self.language,
+                        file_path=str(wav_path),
+                        speed=self._speed_for(job.rate_delta),
+                        temperature=0.65,
+                        repetition_penalty=2.5,
+                        **speaker_kwargs,
+                    )
+                except TypeError:
+                    tts.tts_to_file(
+                        text=job.text,
+                        language=self.language,
+                        file_path=str(wav_path),
+                        speed=self._speed_for(job.rate_delta),
+                        **speaker_kwargs,
+                    )
+
+                # Post-process: Trim trailing vocoder breath/rumble (< -40 dB) from chunk
+                self._trim_trailing_silence(wav_path)
+
                 results.append(ChunkResult(id=job.id, ok=True, path=wav_path,
                                            bytes=wav_path.stat().st_size))
             except Exception as e:

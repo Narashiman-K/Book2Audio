@@ -62,14 +62,14 @@ llm:
 # ---------- Narration style ----------
 style: warm        # warm | motivational | storyteller | minimal
 
-# Pauses (milliseconds) inserted by the prosody engine
+# Pauses (milliseconds) inserted by the prosody engine — tuned for natural human rhythm
 pauses:
-  sentence_ms: 380          # after .
-  comma_ms: 150             # emitted only for hard clause splits (; : —)
-  paragraph_ms: 700         # between paragraphs
-  ellipsis_ms: 800          # after ...
-  dialogue_ms: 550          # after a spoken-quote paragraph
-  chapter_gap_ms: 1200      # leading silence of each chapter file
+  sentence_ms: 250          # brisk, natural sentence gap (down from 380)
+  comma_ms: 120             # emitted only for hard clause splits (; : —)
+  paragraph_ms: 450         # between paragraphs (down from 700)
+  ellipsis_ms: 500          # thoughtful pause after ...
+  dialogue_ms: 350          # pause after spoken-quote paragraph
+  chapter_gap_ms: 600       # leading silence of each chapter file (down from 1200)
 
 emphasis:
   # max words marked per sentence (keeps speech natural)
@@ -103,7 +103,7 @@ extract:
   # pages, are treated as running headers/footers and stripped
   strip_running_lines: true
   min_paragraph_chars: 25      # shorter blocks get merged, not narrated
-  max_sentence_chars: 400      # very long sentences are split at clause breaks
+  max_sentence_chars: 200      # 200 chars optimal: prevents neural TTS drift, repetition, and babbling
 
 # ---------- Pipeline ----------
 pipeline:

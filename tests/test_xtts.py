@@ -208,10 +208,13 @@ class _CapturingXtts(XttsTTS):
 def test_pipeline_routes_xtts_and_passes_rate_delta(tmp_path):
     from b2a.pipeline import Pipeline
 
+    test_doc = tmp_path / "xtts_test.md"
+    test_doc.write_text("# Chapter 1\n\nHope is a lantern carried across the water.\n", encoding="utf-8")
+
     cfg = make_cfg()
     engine = _CapturingXtts(cfg)
     pipeline = Pipeline(cfg, engine, tmp_path)
-    manifest = pipeline.convert(ROOT / "samples" / "the_lantern_keeper.md")
+    manifest = pipeline.convert(test_doc)
 
     assert engine.captured, "engine received no jobs"
     for job in engine.captured:
