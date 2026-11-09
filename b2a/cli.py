@@ -390,6 +390,13 @@ def cmd_bench(args) -> int:
     return 0
 
 
+def cmd_studio(args) -> int:
+    """Launch local Book2Audio Studio web UI."""
+    from .studio import run_studio
+    run_studio(host=args.host, port=args.port, open_browser=not args.no_open)
+    return 0
+
+
 def cmd_audition(args) -> int:
     """Render a test passage in 4 prosody variants (plain, speed, emphasis, full) to audition voice obedience."""
     cfg = load_config(args.config)
@@ -583,6 +590,12 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--engine", default="auto")
     e.add_argument("--clone-voice", metavar="WAV", help="clone this WAV voice sample")
     e.set_defaults(func=cmd_demo)
+
+    st = sub.add_parser("studio", help="launch local Book2Audio Studio web UI")
+    st.add_argument("--host", default="127.0.0.1", help="host to bind (default: 127.0.0.1)")
+    st.add_argument("--port", type=int, default=8080, help="port to bind (default: 8080)")
+    st.add_argument("--no-open", action="store_true", help="do not auto-open browser")
+    st.set_defaults(func=cmd_studio)
     return p
 
 

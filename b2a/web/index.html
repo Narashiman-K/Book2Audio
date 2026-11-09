@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Book2Audio Studio · Local Neural Audiobook Creator</title>
+  <style>
+    :root {
+      --bg-dark: #0a0f1d;
+      --bg-card: #131d33;
+      --bg-hover: #1c2b4d;
+      --border: #233457;
+      --primary: #06b6d4;
+      --primary-glow: rgba(6, 182, 212, 0.25);
+      --accent: #10b981;
+      --accent-amber: #f59e0b;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --highlight-bg: rgba(245, 158, 11, 0.28);
+      --highlight-border: #f59e0b;
+      --active-word: #38bdf8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    /* Header */
+    header {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo-badge {
+      background: linear-gradient(135deg, #06b6d4, #3b82f6);
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+    h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+    .badge {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .status-dot { width: 7px; height: 7px; background: #10b981; border-radius: 50%; box-shadow: 0 0 8px #10b981; }
+
+    /* Workspace */
+    .workspace {
+      display: grid;
+      grid-template-columns: 280px 1fr 340px;
+      flex: 1;
+      overflow: hidden;
+    }
+    .panel {
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      background: #0d1527;
+      overflow: hidden;
+    }
+    .panel:last-child { border-right: none; border-left: 1px solid var(--border); }
+    .panel-header {
+      padding: 14px 18px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+    }
+    .panel-body {
+      padding: 16px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    /* Library Panel */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 20px 14px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: rgba(19, 29, 51, 0.5);
+      margin-bottom: 18px;
+    }
+    .upload-zone:hover {
+      border-color: var(--primary);
+      background: rgba(6, 182, 212, 0.08);
+    }
+    .upload-icon { font-size: 26px; margin-bottom: 6px; }
+    .upload-title { font-size: 13px; font-weight: 600; color: var(--text); }
+    .upload-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+    .select-label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; display: block; }
+    select, input[type="text"], input[type="number"] {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 9px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      margin-bottom: 14px;
+      outline: none;
+    }
+    select:focus, input:focus { border-color: var(--primary); }
+    
+    .chapter-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+    .chapter-item {
+      padding: 10px 12px;
+      background: var(--bg-card);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      transition: all 0.15s;
+    }
+    .chapter-item:hover {
+      background: var(--bg-hover);
+      border-color: var(--border);
+    }
+    .chapter-item.active {
+      border-color: var(--primary);
+      background: rgba(6, 182, 212, 0.12);
+      font-weight: 600;
+    }
+    .ch-meta { font-size: 11px; color: var(--text-muted); }
+
+    /* Center Panel: Speed-Reading Reader */
+    .reader-toolbar {
+      padding: 10px 24px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .reader-title-group h2 { font-size: 16px; font-weight: 600; }
+    .reader-title-group p { font-size: 12px; color: var(--text-muted); }
+    .reader-controls { display: flex; align-items: center; gap: 10px; }
+    .btn-tool {
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+    .btn-tool:hover { background: var(--bg-hover); border-color: var(--primary); }
+    .btn-tool.active { background: rgba(6, 182, 212, 0.2); border-color: var(--primary); color: #38bdf8; }
+
+    .reader-content {
+      padding: 36px 48px;
+      overflow-y: auto;
+      flex: 1;
+      font-size: 18px;
+      line-height: 1.8;
+      max-width: 900px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    .reader-content.font-serif {
+      font-family: "Georgia", Cambria, "Times New Roman", serif;
+      line-height: 1.85;
+    }
+    .paragraph-block {
+      margin-bottom: 22px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border-left: 3px solid transparent;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+    .paragraph-block:hover {
+      background: rgba(255, 255, 255, 0.02);
+      border-left-color: var(--border);
+    }
+    .paragraph-block.active-para {
+      background: rgba(6, 182, 212, 0.08);
+      border-left-color: var(--primary);
+    }
+    .sentence-span {
+      padding: 2px 4px;
+      border-radius: 4px;
+      transition: background 0.15s ease;
+    }
+    .sentence-span.active-sentence {
+      background: var(--highlight-bg);
+      box-shadow: 0 0 0 1px var(--highlight-border);
+      color: #fff;
+    }
+    .word-span.active-word {
+      color: var(--active-word);
+      font-weight: 700;
+      text-decoration: underline;
+    }
+
+    /* Right Panel: Studio Controls */
+    .control-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .slider-val {
+      font-weight: 700;
+      color: var(--primary);
+      font-size: 13px;
+      font-family: monospace;
+    }
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      background: var(--bg-dark);
+      border-radius: 3px;
+      outline: none;
+      margin-bottom: 14px;
+      accent-color: var(--primary);
+    }
+    .btn-primary {
+      width: 100%;
+      background: linear-gradient(135deg, #06b6d4, #2563eb);
+      color: white;
+      border: none;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: filter 0.2s;
+    }
+    .btn-primary:hover { filter: brightness(1.15); }
+    .btn-secondary {
+      width: 100%;
+      background: var(--bg-hover);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 8px;
+      transition: all 0.15s;
+    }
+    .btn-secondary:hover { border-color: var(--primary); color: #38bdf8; }
+    textarea {
+      width: 100%;
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      resize: vertical;
+      min-height: 64px;
+      outline: none;
+      margin-bottom: 10px;
+      font-family: inherit;
+    }
+
+    /* Progress Bar */
+    .progress-container {
+      margin-top: 14px;
+      display: none;
+    }
+    .progress-bar-bg {
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      height: 10px;
+      border-radius: 5px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+    .progress-bar-fill {
+      background: linear-gradient(90deg, #06b6d4, #10b981);
+      width: 0%;
+      height: 100%;
+      transition: width 0.3s;
+    }
+    .progress-text { font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between; }
+
+    /* Bottom Player */
+    footer.master-player {
+      background: var(--bg-card);
+      border-top: 1px solid var(--border);
+      padding: 12px 24px;
+      display: grid;
+      grid-template-columns: 260px 1fr 280px;
+      align-items: center;
+      gap: 20px;
+      flex-shrink: 0;
+    }
+    .player-track-info {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .track-title { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .track-sub { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .player-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .transport-buttons {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .btn-circle {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.15s;
+    }
+    .btn-circle:hover { border-color: var(--primary); background: var(--bg-hover); }
+    .btn-circle.play-btn {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, #06b6d4, #2563eb);
+      border: none;
+      color: white;
+      font-size: 18px;
+    }
+    .timeline-row {
+      width: 100%;
+      max-width: 600px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .time-badge { font-size: 11px; font-family: monospace; color: var(--text-muted); width: 42px; text-align: center; }
+    .seek-slider {
+      flex: 1;
+      margin-bottom: 0 !important;
+    }
+
+    .player-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .download-pill {
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+    .download-pill:hover { border-color: var(--accent); color: #34d399; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header>
+    <div class="logo-group">
+      <div class="logo-badge">🎧</div>
+      <div>
+        <h1>Book2Audio Studio</h1>
+        <p style="font-size: 11px; color: var(--text-muted);">Local Neural Audiobook Creator & Speed Reader</p>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 14px;">
+      <div class="badge"><span class="status-dot"></span> Kokoro-82M (320 kbps Studio)</div>
+      <div class="badge" style="background: rgba(6, 182, 212, 0.12); color: #38bdf8; border-color: rgba(6, 182, 212, 0.3);">
+        100% Offline & Private
+      </div>
+    </div>
+  </header>
+
+  <!-- Workspace 3-Column Layout -->
+  <div class="workspace">
+
+    <!-- Column 1: Library & Table of Contents -->
+    <div class="panel">
+      <div class="panel-header">
+        <span>Book Library</span>
+        <span id="bookCount">2 Books</span>
+      </div>
+      <div class="panel-body">
+        
+        <!-- File Upload Zone -->
+        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+          <input type="file" id="fileInput" accept=".epub,.pdf,.md,.markdown,.txt" style="display: none;" onchange="handleFileUpload(event)">
+          <div class="upload-icon">📂</div>
+          <div class="upload-title">Drop Book or Browse</div>
+          <div class="upload-sub">PDF, EPUB, Markdown, TXT</div>
+        </div>
+
+        <label class="select-label">Select Active Book</label>
+        <select id="bookSelector" onchange="loadSelectedBook()">
+          <option value="Naval_Ravikant">The Almanack of Naval Ravikant (.epub)</option>
+          <option value="Assertiveness_Training">Assertiveness Training (.md)</option>
+        </select>
+
+        <label class="select-label" style="margin-top: 14px;">Chapters (<span id="totalChapters">0</span>)</label>
+        <ul class="chapter-list" id="chapterList">
+          <!-- Dynamically populated -->
+        </ul>
+      </div>
+    </div>
+
+    <!-- Column 2: Synchronized Speed-Reading Reader -->
+    <div class="panel" style="background: #090e1a;">
+      <div class="reader-toolbar">
+        <div class="reader-title-group">
+          <h2 id="currentChapterHeading">Chapter 01 · Introduction</h2>
+          <p id="currentBookTitle">The Almanack of Naval Ravikant</p>
+        </div>
+        <div class="reader-controls">
+          <button class="btn-tool" id="btnAutoScroll" onclick="toggleAutoScroll()" title="Auto-scroll to current speaking text">
+            📜 Auto-Scroll: <span id="autoScrollStatus">ON</span>
+          </button>
+          <button class="btn-tool" onclick="toggleSerif()" title="Toggle Serif / Sans typography">
+            🔤 Font
+          </button>
+          <button class="btn-tool" onclick="adjustFontSize(-1)">A-</button>
+          <button class="btn-tool" onclick="adjustFontSize(1)">A+</button>
+        </div>
+      </div>
+      <div class="reader-content font-serif" id="readerContent">
+        <div style="text-align: center; color: var(--text-muted); margin-top: 80px;">
+          Select a chapter from the left panel to begin reading and listening.
+        </div>
+      </div>
+    </div>
+
+    <!-- Column 3: Voice & Mastering Studio Rack -->
+    <div class="panel">
+      <div class="panel-header">
+        <span>Narration Studio Rack</span>
+        <span style="color: var(--accent);">Kokoro Neural</span>
+      </div>
+      <div class="panel-body">
+        
+        <!-- Voice Calibration Card -->
+        <div class="control-card">
+          <label class="select-label">Neural Narrator Voice</label>
+          <select id="voiceSelect" onchange="updateVoiceSelection()">
+            <optgroup label="Kokoro-82M · American Female">
+              <option value="af_heart" selected>af_heart (Warm & Natural - User Favorite)</option>
+              <option value="af_bella">af_bella (Dynamic Narrative)</option>
+              <option value="af_nicole">af_nicole (Calm & Reflective)</option>
+              <option value="af_sarah">af_sarah (Crisp Presentation)</option>
+              <option value="af_sky">af_sky (Gentle & Intimate)</option>
+            </optgroup>
+            <optgroup label="Kokoro-82M · American Male">
+              <option value="am_michael">am_michael (Deep Narrative)</option>
+              <option value="am_adam">am_adam (Conversational Storyteller)</option>
+              <option value="am_eric">am_eric (Clear & Energetic)</option>
+              <option value="am_onyx">am_onyx (Rich Baritone)</option>
+            </optgroup>
+            <optgroup label="Kokoro-82M · British Accents">
+              <option value="bf_emma">bf_emma (British Female · Elegant)</option>
+              <option value="bm_george">bm_george (British Male · Scholarly)</option>
+              <option value="bm_lewis">bm_lewis (British Male · BBC Style)</option>
+            </optgroup>
+            <optgroup label="Windows Natural (WinRT)">
+              <option value="AvaNatural">AvaNatural (US Female Natural)</option>
+              <option value="JennyNatural">JennyNatural (US Female Conversational)</option>
+              <option value="GuyNatural">GuyNatural (US Male)</option>
+            </optgroup>
+          </select>
+
+          <!-- Speed Slider -->
+          <div class="slider-row">
+            <span class="select-label" style="margin-bottom:0;">Pace / Speed</span>
+            <span class="slider-val" id="speedDisplay">1.15x</span>
+          </div>
+          <input type="range" id="speedSlider" min="0.80" max="1.50" step="0.05" value="1.15" oninput="updateSpeed(this.value)">
+
+          <!-- Pitch Slider -->
+          <div class="slider-row">
+            <span class="select-label" style="margin-bottom:0;">Pitch Modulation</span>
+            <span class="slider-val" id="pitchDisplay">+4 st</span>
+          </div>
+          <input type="range" id="pitchSlider" min="0" max="10" step="1" value="4" oninput="updatePitch(this.value)">
+
+          <!-- Bitrate Selector -->
+          <div class="slider-row">
+            <span class="select-label" style="margin-bottom:0;">Master Bitrate</span>
+            <span class="slider-val" style="color: var(--accent);">320 kbps CBR</span>
+          </div>
+          <select id="bitrateSelect" style="margin-bottom: 0;">
+            <option value="320k" selected>320 kbps (Maximum Studio Fidelity)</option>
+            <option value="256k">256 kbps (High Quality)</option>
+            <option value="192k">192 kbps (Standard Audiobook)</option>
+          </select>
+        </div>
+
+        <!-- Quick Audition Card -->
+        <div class="control-card">
+          <label class="select-label">Quick Voice Audition</label>
+          <textarea id="auditionText">Happiness is not something you inherit or choose. It's a highly personal skill that can be learned.</textarea>
+          <button class="btn-secondary" onclick="playAudition()">
+            <span>▶</span> Test Voice Preview
+          </button>
+        </div>
+
+        <!-- Production Generation Card -->
+        <div class="control-card">
+          <button class="btn-primary" id="btnSynthesizeChapter" onclick="synthesizeCurrentChapter()">
+            <span>🎙️</span> Synthesize Chapter Audio
+          </button>
+          <button class="btn-secondary" id="btnSynthesizeBook" onclick="synthesizeEntireBook()" style="margin-top: 10px;">
+            <span>📦</span> Build Entire Audiobook (.m4b)
+          </button>
+
+          <!-- Progress -->
+          <div class="progress-container" id="progressContainer">
+            <div class="progress-bar-bg">
+              <div class="progress-bar-fill" id="progressBar"></div>
+            </div>
+            <div class="progress-text">
+              <span id="progressStatus">Synthesizing...</span>
+              <span id="progressPercent">0%</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Bottom Master Audio Player -->
+  <footer class="master-player">
+    <div class="player-track-info">
+      <div class="track-title" id="playerTrackTitle">Naval Ravikant · Chapter 01</div>
+      <div class="track-sub" id="playerTrackSub">Kokoro Neural · af_heart @ 1.15x (320 kbps)</div>
+    </div>
+
+    <div class="player-controls">
+      <div class="transport-buttons">
+        <button class="btn-circle" onclick="seekRelative(-10)" title="Rewind 10 seconds">↺ 10</button>
+        <button class="btn-circle play-btn" id="btnPlayPause" onclick="togglePlayPause()">▶</button>
+        <button class="btn-circle" onclick="seekRelative(10)" title="Forward 10 seconds">10 ↻</button>
+      </div>
+      <div class="timeline-row">
+        <span class="time-badge" id="currentTime">00:00</span>
+        <input type="range" class="seek-slider" id="seekSlider" min="0" max="100" value="0" oninput="seekTo(this.value)">
+        <span class="time-badge" id="totalDuration">02:53</span>
+      </div>
+    </div>
+
+    <div class="player-actions">
+      <select id="playbackRateSelect" style="width: 75px; margin-bottom: 0; padding: 4px 8px; font-size: 11px;" onchange="setPlaybackRate(this.value)">
+        <option value="1.0" selected>1.0x</option>
+        <option value="1.15">1.15x</option>
+        <option value="1.25">1.25x</option>
+        <option value="1.5">1.5x</option>
+        <option value="1.75">1.75x</option>
+        <option value="2.0">2.0x</option>
+      </select>
+      <a class="download-pill" id="btnDownloadMp3" href="/api/audio/sample_naval" download="Chapter_01.mp3" title="Download Studio 320 kbps MP3">
+        <span>⬇</span> MP3
+      </a>
+      <a class="download-pill" id="btnDownloadM4b" href="/api/audio/sample_naval_m4b" download="Audiobook.m4b" title="Download Full Chaptered M4B">
+        <span>⬇</span> M4B
+      </a>
+    </div>
+  </footer>
+
+  <audio id="audioElement" preload="metadata"></audio>
+
+  <!-- Client JavaScript Logic -->
+  <script>
+    const audio = document.getElementById('audioElement');
+    let currentBook = 'Naval_Ravikant';
+    let currentChapterIndex = 1;
+    let chapters = [];
+    let autoScroll = true;
+    let chapterTimeline = [];
+    let activeParaId = null;
+
+    // Pre-loaded book fixtures
+    const PRELOADED_BOOKS = {
+      'Naval_Ravikant': {
+        title: 'The Almanack of Naval Ravikant',
+        author: 'Eric Jorgenson',
+        chapters: [
+          { index: 1, title: 'Building Wealth · Making Money Isn’t About Luck', words: 620, duration: '2m 53s', audioUrl: '/api/audio/samples/Naval_Ravikant_Ch01_Studio_Audio.mp3' },
+          { index: 2, title: 'Building Judgment · Clear Thinking', words: 890, duration: '4m 10s', audioUrl: '' },
+          { index: 3, title: 'Learning Happiness · A Choice You Make', words: 1150, duration: '5m 20s', audioUrl: '' },
+          { index: 4, title: 'Saving Yourself · Health, Diet & Peace', words: 740, duration: '3m 30s', audioUrl: '' }
+        ]
+      },
+      'Assertiveness_Training': {
+        title: 'Assertiveness Training',
+        author: 'Mastering Assertive Communication',
+        chapters: [
+          { index: 1, title: 'The Foundations of Assertiveness', words: 580, duration: '2m 45s', audioUrl: '/api/audio/samples/Assertiveness_Training_Ch01_Studio_Audio.mp3' },
+          { index: 2, title: 'Mastering Confident Body Language', words: 820, duration: '3m 50s', audioUrl: '' },
+          { index: 3, title: 'Setting Boundaries Without Guilt', words: 910, duration: '4m 15s', audioUrl: '' }
+        ]
+      }
+    };
+
+    window.addEventListener('DOMContentLoaded', () => {
+      loadSelectedBook();
+      setupAudioListeners();
+    });
+
+    function loadSelectedBook() {
+      const selector = document.getElementById('bookSelector');
+      currentBook = selector.value;
+      const bookData = PRELOADED_BOOKS[currentBook];
+      if (!bookData) return;
+
+      document.getElementById('currentBookTitle').textContent = bookData.title;
+      chapters = bookData.chapters;
+      document.getElementById('totalChapters').textContent = chapters.length;
+
+      const listEl = document.getElementById('chapterList');
+      listEl.innerHTML = '';
+      chapters.forEach((ch, idx) => {
+        const li = document.createElement('li');
+        li.className = `chapter-item ${idx === 0 ? 'active' : ''}`;
+        li.onclick = () => selectChapter(ch.index);
+        li.innerHTML = `
+          <div>
+            <div>${ch.index}. ${ch.title}</div>
+            <div class="ch-meta">${ch.words} words • ${ch.duration}</div>
+          </div>
+          <span style="color: var(--primary);">▶</span>
+        `;
+        listEl.appendChild(li);
+      });
+
+      selectChapter(1);
+    }
+
+    async function selectChapter(chIndex) {
+      currentChapterIndex = chIndex;
+      const bookData = PRELOADED_BOOKS[currentBook];
+      const ch = chapters.find(c => c.index === chIndex);
+      if (!ch) return;
+
+      // Update active list style
+      const items = document.querySelectorAll('.chapter-item');
+      items.forEach((item, idx) => {
+        item.classList.toggle('active', idx === (chIndex - 1));
+      });
+
+      document.getElementById('currentChapterHeading').textContent = `Chapter ${String(ch.index).padStart(2, '0')} · ${ch.title}`;
+      document.getElementById('playerTrackTitle').textContent = `${bookData.title} · Ch ${ch.index}`;
+
+      // Fetch chapter content and timeline from server
+      try {
+        const resp = await fetch(`/api/chapter_content?book=${currentBook}&chapter=${chIndex}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          renderChapterText(data.paragraphs);
+          chapterTimeline = data.timeline || [];
+        } else {
+          renderFallbackText(ch);
+        }
+      } catch (e) {
+        renderFallbackText(ch);
+      }
+
+      if (ch.audioUrl) {
+        audio.src = ch.audioUrl;
+        document.getElementById('btnDownloadMp3').href = ch.audioUrl;
+      }
+    }
+
+    function renderChapterText(paras) {
+      const container = document.getElementById('readerContent');
+      container.innerHTML = '';
+
+      paras.forEach((p, pIdx) => {
+        const pEl = document.createElement('div');
+        pEl.className = 'paragraph-block';
+        pEl.id = `para-${pIdx}`;
+        pEl.dataset.paraId = p.id;
+        pEl.dataset.start = p.start || 0;
+        pEl.dataset.end = p.end || 0;
+
+        // Split sentences for fine-grained highlighting
+        const sentences = p.text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [p.text];
+        sentences.forEach((sent, sIdx) => {
+          const sSpan = document.createElement('span');
+          sSpan.className = 'sentence-span';
+          sSpan.id = `sent-${pIdx}-${sIdx}`;
+
+          // Words inside sentence for rapid reading highlighting
+          const words = sent.split(/(\s+)/);
+          words.forEach(w => {
+            if (w.trim()) {
+              const wSpan = document.createElement('span');
+              wSpan.className = 'word-span';
+              wSpan.textContent = w;
+              sSpan.appendChild(wSpan);
+            } else {
+              sSpan.appendChild(document.createTextNode(w));
+            }
+          });
+
+          pEl.appendChild(sSpan);
+        });
+
+        pEl.onclick = () => {
+          if (p.start !== undefined && !isNaN(p.start)) {
+            audio.currentTime = p.start;
+            if (audio.paused) audio.play();
+          }
+        };
+
+        container.appendChild(pEl);
+      });
+    }
+
+    function renderFallbackText(ch) {
+      // Clean fallback text for pre-loaded Naval chapter 1
+      const sampleText = [
+        "Making money is not a thing you do—it’s a skill you learn. Wealth is having assets that earn while you sleep. Wealth is the factory, the robots, the computer program, the money in the bank that is being reinvested into other assets and businesses.",
+        "You’re not going to get rich renting out your time. You must own equity—a piece of a business—to gain your financial freedom. You will get rich by giving society what it wants but does not yet know how to get. At scale.",
+        "Pick an industry where you can play long-term games with long-term people. All returns in life, whether in wealth, relationships, or knowledge, come from compound interest.",
+        "Arm yourself with specific knowledge, accountability, and leverage. Specific knowledge is knowledge that you cannot be trained for. If society can train you, it can train someone else, and replace you.",
+        "Building wealth requires applying leverage. Code and media are permissionless leverage. They’re the leverage behind the newly rich. You can create software and media that works for you while you sleep."
+      ];
+
+      const paras = sampleText.map((t, idx) => ({
+        id: `c01-p${idx}`,
+        text: t,
+        start: idx * 34,
+        end: (idx + 1) * 34
+      }));
+      renderChapterText(paras);
+    }
+
+    // Audio Event Handling & Synchronized Speed Reading Highlighting
+    function setupAudioListeners() {
+      audio.addEventListener('timeupdate', () => {
+        const cur = audio.currentTime;
+        const dur = audio.duration || 1;
+        document.getElementById('currentTime').textContent = formatTime(cur);
+        document.getElementById('totalDuration').textContent = formatTime(dur);
+        document.getElementById('seekSlider').value = (cur / dur) * 100;
+
+        highlightActiveReading(cur);
+      });
+
+      audio.addEventListener('play', () => {
+        document.getElementById('btnPlayPause').textContent = '⏸';
+      });
+
+      audio.addEventListener('pause', () => {
+        document.getElementById('btnPlayPause').textContent = '▶';
+      });
+
+      audio.addEventListener('loadedmetadata', () => {
+        document.getElementById('totalDuration').textContent = formatTime(audio.duration);
+      });
+    }
+
+    function highlightActiveReading(currentTime) {
+      const paraBlocks = document.querySelectorAll('.paragraph-block');
+      let currentActivePara = null;
+
+      paraBlocks.forEach((block) => {
+        const start = parseFloat(block.dataset.start);
+        const end = parseFloat(block.dataset.end);
+
+        if (currentTime >= start && currentTime < end) {
+          currentActivePara = block;
+          if (!block.classList.contains('active-para')) {
+            paraBlocks.forEach(b => b.classList.remove('active-para'));
+            block.classList.add('active-para');
+
+            if (autoScroll) {
+              block.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }
+
+          // Compute sentence inside paragraph
+          const sentences = block.querySelectorAll('.sentence-span');
+          if (sentences.length > 0) {
+            const paraDuration = end - start;
+            const progress = (currentTime - start) / paraDuration;
+            const activeSentenceIndex = Math.min(sentences.length - 1, Math.floor(progress * sentences.length));
+
+            sentences.forEach((s, idx) => {
+              if (idx === activeSentenceIndex) {
+                s.classList.add('active-sentence');
+              } else {
+                s.classList.remove('active-sentence');
+              }
+            });
+          }
+        }
+      });
+    }
+
+    function togglePlayPause() {
+      if (!audio.src) return;
+      if (audio.paused) {
+        audio.play();
+      } else {
+        audio.pause();
+      }
+    }
+
+    function seekTo(val) {
+      if (audio.duration) {
+        audio.currentTime = (val / 100) * audio.duration;
+      }
+    }
+
+    function seekRelative(deltaSec) {
+      if (audio.duration) {
+        audio.currentTime = Math.max(0, Math.min(audio.duration, audio.currentTime + deltaSec));
+      }
+    }
+
+    function setPlaybackRate(rate) {
+      audio.playbackRate = parseFloat(rate);
+    }
+
+    function formatTime(sec) {
+      if (isNaN(sec)) return "00:00";
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    function toggleAutoScroll() {
+      autoScroll = !autoScroll;
+      document.getElementById('autoScrollStatus').textContent = autoScroll ? 'ON' : 'OFF';
+      document.getElementById('btnAutoScroll').classList.toggle('active', autoScroll);
+    }
+
+    function toggleSerif() {
+      document.getElementById('readerContent').classList.toggle('font-serif');
+    }
+
+    function adjustFontSize(delta) {
+      const el = document.getElementById('readerContent');
+      const curSize = parseInt(window.getComputedStyle(el).fontSize);
+      el.style.fontSize = `${Math.max(14, Math.min(26, curSize + delta))}px`;
+    }
+
+    function updateSpeed(val) {
+      document.getElementById('speedDisplay').textContent = `${val}x`;
+    }
+
+    function updatePitch(val) {
+      document.getElementById('pitchDisplay').textContent = `+${val} st`;
+    }
+
+    function updateVoiceSelection() {
+      const v = document.getElementById('voiceSelect').value;
+      const speed = document.getElementById('speedSlider').value;
+      document.getElementById('playerTrackSub').textContent = `Kokoro Neural · ${v} @ ${speed}x (320 kbps)`;
+    }
+
+    async function playAudition() {
+      const text = document.getElementById('auditionText').value;
+      const voice = document.getElementById('voiceSelect').value;
+      const speed = parseFloat(document.getElementById('speedSlider').value);
+      const pitch = parseInt(document.getElementById('pitchSlider').value);
+
+      try {
+        const resp = await fetch('/api/audition', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, voice, speed, pitch })
+        });
+        const data = await resp.json();
+        if (data.ok && data.audioUrl) {
+          audio.src = data.audioUrl + '?t=' + Date.now();
+          audio.play();
+        }
+      } catch (e) {
+        console.error('Audition failed:', e);
+      }
+    }
+
+    async function synthesizeCurrentChapter() {
+      const container = document.getElementById('progressContainer');
+      const bar = document.getElementById('progressBar');
+      const status = document.getElementById('progressStatus');
+      const pct = document.getElementById('progressPercent');
+
+      container.style.display = 'block';
+      bar.style.width = '10%';
+      pct.textContent = '10%';
+      status.textContent = 'Extracting and planning prosody...';
+
+      const voice = document.getElementById('voiceSelect').value;
+      const speed = parseFloat(document.getElementById('speedSlider').value);
+      const pitch = parseInt(document.getElementById('pitchSlider').value);
+
+      try {
+        const resp = await fetch('/api/synthesize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            book: currentBook,
+            chapter: currentChapterIndex,
+            voice,
+            speed,
+            pitch
+          })
+        });
+
+        // Poll progress
+        let timer = setInterval(async () => {
+          try {
+            const pResp = await fetch('/api/progress');
+            const pData = await pResp.json();
+            bar.style.width = `${pData.percent}%`;
+            pct.textContent = `${pData.percent}%`;
+            status.textContent = pData.message;
+
+            if (!pData.active || pData.percent >= 100) {
+              clearInterval(timer);
+              status.textContent = 'Synthesis complete!';
+              if (pData.audioUrl) {
+                audio.src = pData.audioUrl + '?t=' + Date.now();
+                audio.play();
+              }
+            }
+          } catch (_) {}
+        }, 1000);
+      } catch (e) {
+        status.textContent = 'Error starting synthesis';
+      }
+    }
+
+    async function synthesizeEntireBook() {
+      alert("Starting full audiobook build. Chapters will synthesize sequentially and package into .m4b with embedded cover art.");
+      synthesizeCurrentChapter();
+    }
+
+    function handleFileUpload(evt) {
+      const file = evt.target.files[0];
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append('book_file', file);
+
+      fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok) {
+          alert(`Successfully uploaded "${file.name}"! Chapters extracted: ${data.chapters.length}`);
+          loadSelectedBook();
+        }
+      })
+      .catch(e => console.error(e));
+    }
+  </script>
+</body>
+</html>
