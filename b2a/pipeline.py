@@ -266,7 +266,7 @@ class Pipeline:
                                         int(self.cfg.get_path("extract.max_sentence_chars", 400)))
             chunk_id = self._chunk_id(para.text, gpros, seg)
             chunk_file = self._chunk_file(chunks_dir, chunk_id)
-            if chunk_file is not None:
+            if chunk_file is not None and not self.force:
                 continue  # cached audio
             if self.engine.name == "sapi":
                 markup = build_sapi_xml(para.text, sentences, seg,
@@ -335,10 +335,13 @@ class Pipeline:
                 para_id=seg.get("para_id", ""), emphasis=seg.get("emphasis", []),
                 rate_delta=seg.get("rate_delta", 0), pitch_delta=seg.get("pitch_delta", 0),
                 pause_after_ms=seg.get("pause_after_ms", 400))
+        speed_val = self.cfg.get_path("tts.kokoro.speed") if self.engine.name == "kokoro" else self.cfg.get_path("tts.speed", 10)
         material = json.dumps({
             "t": text, "r": gpros["rate_pct"], "p": gpros["pitch_pct"],
             "e": seg.emphasis, "sr": seg.rate_delta, "sp": seg.pitch_delta,
             "engine": self.engine.name, "voice": self.engine.chosen_voice,
+            "speed": speed_val,
+            "pauses": self.cfg.get_path("pauses", {}),
         }, sort_keys=True)
         return hashlib.sha1(material.encode()).hexdigest()[:16]
 

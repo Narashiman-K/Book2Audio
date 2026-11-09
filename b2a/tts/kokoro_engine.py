@@ -155,7 +155,18 @@ class KokoroTTS(BaseTTS):
         out_dir.mkdir(parents=True, exist_ok=True)
         kokoro = self._get_kokoro()
         voice = self.chosen_voice
-        base_speed = float(self.cfg.get_path("tts.speed", 1.0))
+
+        # Check kokoro-specific speed first, fallback to general tts.speed
+        raw_speed = self.cfg.get_path("tts.kokoro.speed", None)
+        if raw_speed is None:
+            raw_speed = self.cfg.get_path("tts.speed", 1.0)
+        raw_speed = float(raw_speed)
+
+        # Scale down 0-20 scale if passed (10 = 1.0x, 9 = 0.95x, 12 = 1.10x)
+        if raw_speed > 2.0:
+            base_speed = 1.0 + (raw_speed - 10.0) * 0.05
+        else:
+            base_speed = raw_speed
 
         known_voices = kokoro.get_voices()
         if voice not in known_voices:

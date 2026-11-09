@@ -62,3 +62,4 @@ def test_kokoro_synthesize_batch(test_cfg, tmp_path):
         assert results[0].path.exists()
         assert results[1].ok is True
         assert results[1].path.exists()
+

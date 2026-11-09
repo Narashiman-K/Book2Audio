@@ -15,7 +15,7 @@ tts:
   # --- Kokoro-82M High-Fidelity Neural TTS ---
   kokoro:
     voice: af_heart            # af_heart (warm audiobook narrator), am_michael, am_adam
-    speed: 1.05                # 1.0 = normal, 1.05 = 5% faster
+    speed: 0.95                # 1.0 = normal, 0.95 = relaxed & natural audiobook cadence
     model_path: models/kokoro/kokoro-v1.0.onnx
     voices_path: models/kokoro/voices-v1.0.bin
 
