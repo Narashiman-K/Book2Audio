@@ -5,11 +5,16 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from b2a.config import load_config
+from b2a.config import Config
 from b2a.models import ProsodySegment
 from b2a.prosody.ssml import build_plain_text, build_sapi_xml, build_ssml, compute_global_prosody
 
-CFG = load_config()
+CFG = Config({
+    "tts": {
+        "rate_percent_per_speed_unit": 10,
+        "pitch_percent_per_pitch_unit": 6,
+    }
+})
 
 
 def seg(**kw) -> ProsodySegment:

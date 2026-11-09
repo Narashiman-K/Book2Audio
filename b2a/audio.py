@@ -133,7 +133,22 @@ def assemble_chapter(
         raise ValueError("no chunks to assemble")
 
     ref_rate = None
-    chapter = AudioSegment.silent(duration=lead_silence_ms, frame_rate=22050)
+    for path, _ in chunks:
+        try:
+            sample_seg = AudioSegment.from_file(str(path), format="wav")
+            ref_rate = sample_seg.frame_rate
+            break
+        except Exception:
+            try:
+                sample_seg = AudioSegment.from_file(str(path))
+                ref_rate = sample_seg.frame_rate
+                break
+            except Exception:
+                continue
+    if ref_rate is None:
+        ref_rate = 24000
+
+    chapter = AudioSegment.silent(duration=lead_silence_ms, frame_rate=ref_rate)
 
     for i, (path, pause_ms) in enumerate(chunks):
         try:
@@ -208,7 +223,7 @@ def assemble_chapter(
             _run_ffmpeg([
                 "-i", str(tmp_wav),
                 "-af", ",".join(filters),
-                "-ar", "22050", "-ac", "1",
+                "-ar", str(ref_rate), "-ac", "1",
                 str(out_wav),
             ])
             # Encode MP3 directly from the pristine normalized WAV
@@ -222,7 +237,7 @@ def assemble_chapter(
             _run_ffmpeg([
                 "-i", str(tmp_wav),
                 "-af", ",".join(filters),
-                "-ar", "22050", "-ac", "1",
+                "-ar", str(ref_rate), "-ac", "1",
                 "-codec:a", "libmp3lame", "-b:a", bitrate,
                 *meta,
                 str(out_mp3),
