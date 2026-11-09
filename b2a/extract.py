@@ -188,7 +188,9 @@ def _running_lines(pages_text: List[str]) -> set:
 
 
 def _clean_chapter_title(raw: str) -> str:
-    t = re.sub(r"\s+", " ", raw).strip(" .:-–—")
+    # Strip HTML anchor tags (e.g., <a id="epub-1"></a>)
+    t = re.sub(r"<[^>]+>", "", raw)
+    t = re.sub(r"\s+", " ", t).strip(" .:-–—")
     return t[:80] or "Untitled"
 
 
@@ -196,7 +198,7 @@ def _clean_chapter_title(raw: str) -> str:
 # EPUB
 # --------------------------------------------------------------------------
 
-_SKIP_NAMES = ("cover", "toc", "nav", "ncx", "titlepage", "colophon", "copyright", "dedication")
+_SKIP_RE = re.compile(r"(^|[_\-\./])(cover|toc|nav|ncx|titlepage|colophon|copyright|dedication)([_\-\./]|$)", re.I)
 
 
 def extract_epub(path: Path, cfg) -> Book:
@@ -218,7 +220,7 @@ def extract_epub(path: Path, cfg) -> Book:
     lexicon = load_lexicon(cfg.get_path("lexicon.path"))
     for item in book_doc.get_items_of_type(ebooklib.ITEM_DOCUMENT):
         name = (item.get_name() or "").lower()
-        if any(s in name for s in _SKIP_NAMES):
+        if _SKIP_RE.search(name):
             continue
         soup = BeautifulSoup(item.get_content(), "lxml")
         for tag in soup(["script", "style", "head"]):

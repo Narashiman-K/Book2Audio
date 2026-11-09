@@ -23,6 +23,23 @@ def _setup_logging(verbose: bool) -> None:
     )
 
 
+def _parse_chapters(spec: Optional[str]) -> Optional[List[int]]:
+    if not spec:
+        return None
+    res = set()
+    for part in spec.split(","):
+        part = part.strip()
+        if "-" in part:
+            try:
+                lo, hi = part.split("-", 1)
+                res.update(range(int(lo), int(hi) + 1))
+            except ValueError:
+                pass
+        elif part.isdigit():
+            res.add(int(part))
+    return sorted(res) if res else None
+
+
 def cmd_convert(args) -> int:
     cfg = load_config(args.config)
     overrides = {
@@ -55,8 +72,14 @@ def cmd_convert(args) -> int:
             "No TTS engine available — producing SILENT audio. On Windows install "
             "natural voices (Settings > Accessibility > Narrator) or Piper.")
 
+    target_chs = _parse_chapters(getattr(args, "chapters", None))
     pipeline = Pipeline(cfg, engine, Path(args.out))
-    manifest = pipeline.convert(Path(args.book), force=args.force, m4b=getattr(args, "m4b", False))
+    manifest = pipeline.convert(
+        Path(args.book),
+        force=args.force,
+        m4b=getattr(args, "m4b", False),
+        chapters=target_chs,
+    )
     print()
     print("=" * 62)
     print(f"  Audiobook ready: {args.out}/{slugify(manifest['book'])}/")
@@ -512,6 +535,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--ollama-model", help='e.g. "qwen2.5:3b" (default: auto)')
     c.add_argument("--tempo", type=float, help="ffmpeg tempo guarantee (1.0 = off)")
     c.add_argument("--workers", type=int, help="parallel chapter workers")
+    c.add_argument("--chapters", help='specific chapter numbers to render, e.g. "1" or "1,2" or "1-3"')
     c.add_argument("--force", action="store_true", help="re-synthesize even if cached")
     c.add_argument("--m4b", action="store_true", help="also generate a single chaptered .m4b audiobook file")
     c.add_argument("-v", "--verbose", action="store_true")

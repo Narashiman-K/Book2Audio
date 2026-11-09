@@ -137,10 +137,13 @@ def assemble_chapter(
 
     for i, (path, pause_ms) in enumerate(chunks):
         try:
-            seg = AudioSegment.from_file(str(path))  # format auto-probed via ffmpeg
-        except Exception as e:
-            log.warning("chunk %s unreadable (%s) — skipped", path.name, e)
-            continue
+            seg = AudioSegment.from_file(str(path), format="wav")
+        except Exception:
+            try:
+                seg = AudioSegment.from_file(str(path))
+            except Exception as e:
+                log.warning("chunk %s unreadable (%s) — skipped", path.name, e)
+                continue
         if ref_rate is None:
             ref_rate = seg.frame_rate
         seg = seg.set_frame_rate(ref_rate).set_channels(1)

@@ -92,6 +92,7 @@ class Pipeline:
         book_path: Path,
         force: bool = False,
         m4b: bool = False,
+        chapters: Optional[List[int]] = None,
         progress: Optional[Callable[[str], None]] = None,
     ) -> dict:
         def say(msg: str):
@@ -103,9 +104,16 @@ class Pipeline:
         say(f"Parsed '{book.title}' — {len(book.chapters)} chapters, "
             f"{book.total_paragraphs} paragraphs")
 
-        return self.render_book(book, force=force, m4b=m4b, say=say)
+        return self.render_book(book, force=force, m4b=m4b, chapters=chapters, say=say)
 
-    def render_book(self, book: Book, force: bool = False, m4b: bool = False, say=None) -> dict:
+    def render_book(
+        self,
+        book: Book,
+        force: bool = False,
+        m4b: bool = False,
+        chapters: Optional[List[int]] = None,
+        say=None,
+    ) -> dict:
         say = say or (lambda m: None)
         out_book_dir = self.out_root / slugify(book.title)
         build_dir = self.out_root / "_build" / f"{slugify(book.title)}-{settings_hash(self.cfg)}"
@@ -125,7 +133,14 @@ class Pipeline:
         chapter_results: List[dict] = []
         total_t0 = time.time()
 
-        for chapter in book.chapters:
+        target_chapters = book.chapters
+        if chapters:
+            target_chapters = [c for c in book.chapters if c.index in chapters]
+            if not target_chapters:
+                say(f"Warning: Requested chapter(s) {chapters} not found; available: 1..{len(book.chapters)}")
+                target_chapters = book.chapters[:1]
+
+        for chapter in target_chapters:
             out_name = f"{chapter.index:02d} - {_safe(chapter.title)}.mp3"
             out_path = out_book_dir / out_name
             ch_wav = build_dir / f"chapter_{chapter.index:02d}.wav"

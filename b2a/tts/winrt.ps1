@@ -1,4 +1,4 @@
-﻿# book2audio — WinRT TTS batch engine (Windows PowerShell 5.1)
+# book2audio — WinRT TTS batch engine (Windows PowerShell 5.1)
 #
 # Drives Windows 11 speech through Windows.Media.SpeechSynthesis (WinRT),
 # which is the ONLY API family that can see OneCore and Narrator natural

@@ -63,7 +63,7 @@ class WindowsWinrtTTS(BaseTTS):
         ssml_dir = out_dir / "_ssml"
         ssml_dir.mkdir(exist_ok=True)
 
-        job_manifest = {"out_ext": ".audio", "jobs": []}
+        job_manifest = {"out_ext": ".wav", "jobs": []}
         for job in jobs:
             ssml_path = ssml_dir / f"{job.id}.xml"
             ssml_path.write_text(job.ssml, encoding="utf-8")
@@ -88,7 +88,9 @@ class WindowsWinrtTTS(BaseTTS):
         by_id = {r.get("id"): r for r in status.get("results", [])}
 
         for job in jobs:
-            audio_path = out_dir / f"{job.id}.audio"
+            audio_path = out_dir / f"{job.id}.wav"
+            if not audio_path.exists():
+                audio_path = out_dir / f"{job.id}.audio"
             st = by_id.get(job.id, {})
             if st.get("ok") and audio_path.exists() and audio_path.stat().st_size > 0:
                 results.append(ChunkResult(id=job.id, ok=True, path=audio_path,
