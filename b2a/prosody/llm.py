@@ -1,17 +1,22 @@
-"""LLM prosody engine — local Ollama, structured JSON output, nothing online.
+"""LLM prosody engine — local Ollama, lean JSON schema, selective expressivity, nothing online.
 
 Flow:
-  paragraphs (batch of N) -> Ollama /api/chat with JSON schema -> validated
-  ProsodySegment list. Any failure falls back to the rule engine for that
-  batch, so a cold/missing Ollama never breaks the audiobook.
+  1. Once per chapter: fast tone arc summary query.
+  2. Selective paragraph filtering: expressive paragraphs (dialogue, short punchy lines,
+     questions/exclamations, scene transitions) are planned by Ollama; plain exposition
+     falls back instantly to the rule engine (huge CPU speedup).
+  3. Lean schema: output only mood, emphasis words, and pause bucket. A lookup table
+     maps mood to rate/pitch deltas, cutting output tokens by ~50% and eliminating numerical hallucinations.
+  4. Paragraph cache: SHA1 hashes of paragraph text ensure instant zero-token reruns.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import shutil
 import subprocess
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import requests
 
@@ -22,7 +27,7 @@ from .styles import get_style
 
 log = logging.getLogger("b2a.llm")
 
-# ---- JSON schema handed to Ollama's "structured outputs" mode -------------
+# ---- Lean JSON schema handed to Ollama's "structured outputs" mode -------------
 SCHEMA = {
     "type": "object",
     "properties": {
@@ -32,51 +37,93 @@ SCHEMA = {
                 "type": "object",
                 "properties": {
                     "id": {"type": "string"},
-                    "mood": {"type": "string",
-                             "enum": ["neutral", "warm", "reflective", "urgent",
-                                      "excited", "solemn", "dialogue", "question"]},
-                    "emphasis": {"type": "array", "items": {"type": "string"},
-                                 "maxItems": 4},
-                    "rate_delta": {"type": "integer", "minimum": -15, "maximum": 15},
-                    "pitch_delta": {"type": "integer", "minimum": -15, "maximum": 15},
-                    "pause_after_ms": {"type": "integer", "minimum": 0, "maximum": 1500},
+                    "mood": {
+                        "type": "string",
+                        "enum": [
+                            "neutral", "warm", "reflective", "urgent",
+                            "excited", "solemn", "dialogue", "question",
+                        ],
+                    },
+                    "emphasis": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 3,
+                    },
+                    "pause": {
+                        "type": "string",
+                        "enum": ["short", "medium", "long", "dramatic"],
+                    },
                 },
-                "required": ["id", "mood", "emphasis", "rate_delta", "pitch_delta", "pause_after_ms"],
+                "required": ["id", "mood", "emphasis", "pause"],
             },
         }
     },
     "required": ["segments"],
 }
 
+MOOD_PROSODY_MAP: Dict[str, dict] = {
+    "neutral": {"rate_delta": 0, "pitch_delta": 0},
+    "warm": {"rate_delta": -2, "pitch_delta": 1},
+    "reflective": {"rate_delta": -5, "pitch_delta": -2},
+    "urgent": {"rate_delta": 6, "pitch_delta": 2},
+    "excited": {"rate_delta": 5, "pitch_delta": 4},
+    "solemn": {"rate_delta": -6, "pitch_delta": -4},
+    "dialogue": {"rate_delta": 1, "pitch_delta": 2},
+    "question": {"rate_delta": -2, "pitch_delta": 3},
+}
+
+PAUSE_BUCKET_MAP: Dict[str, int] = {
+    "short": 250,
+    "medium": 450,
+    "long": 650,
+    "dramatic": 950,
+}
+
 GPU_MODELS_DEFAULT = ["qwen2.5:7b-instruct", "llama3.1:8b", "qwen2.5-coder:7b", "mistral:7b"]
 CPU_MODELS_DEFAULT = ["qwen2.5:3b", "llama3.2:3b", "phi3.5:3.8b", "phi3:mini", "gemma2:2b"]
 
-SYSTEM_PROMPT = """You are a audiobook narration director. For each paragraph you receive, \
-decide how a warm human narrator should voice it. Reply ONLY with JSON matching the schema.
+SYSTEM_PROMPT = """You are an audiobook narration director. For each paragraph, select the emotional mood, \
+up to 3 words to emphasize, and the trailing pause duration. Reply ONLY with JSON conforming to the schema.
 
 Guidelines:
-* mood: the emotional color of the paragraph (warm/reflective for description, \
-urgent/excited for action or inspiration, solemn for serious moments, dialogue if it quotes speech).
-* emphasis: 0-3 words or very short phrases that carry the emotional weight and \
-MUST appear verbatim in the paragraph (lowercase preferred). Do not stress function words.
-* rate_delta / pitch_delta: percentage points vs the narrator's base voice. \
-Suggest -10 (slower/deeper) .. +10 (faster/brighter). Keep most paragraphs near 0; \
-use positive pitch for hope/joy, negative pitch for gravity, negative rate for weighty or sad lines.
-* pause_after_ms: breath before the next paragraph. 300-700 typical; \
-900-1500 only before/after scene shifts or dramatic reveals."""
+* mood: emotional color (warm/reflective for description, urgent/excited for action/inspiration, \
+solemn for serious moments, dialogue for quoted speech, question for inquiries).
+* emphasis: 0-3 words or short phrases that carry emotional weight (MUST appear verbatim in paragraph).
+* pause: 'short' (brisk transition, ~250ms), 'medium' (normal narrative pace, ~450ms), \
+'long' (reflection/scene break, ~650ms), 'dramatic' (revelation or cliffhanger, ~950ms)."""
+
+
+def is_expressive_paragraph(text: str, index: int, total: int) -> bool:
+    """Determine if a paragraph warrants LLM prosody analysis vs fast deterministic rules."""
+    # First and last paragraph of chapter
+    if index == 0 or index == total - 1:
+        return True
+    # Quoted dialogue
+    if '"' in text or '“' in text or '”' in text:
+        return True
+    stripped = text.strip()
+    # Punchy lines or scene shifts
+    if len(stripped) < 70:
+        return True
+    # Questions / Exclamations
+    if '?' in stripped or '!' in stripped:
+        return True
+    return False
 
 
 class OllamaProsody:
     def __init__(self, cfg: Config, style_name: str = "warm"):
         self.cfg = cfg
+        self.style_name = style_name
         self.style = get_style(style_name)
         self.url = cfg.get_path("llm.url", "http://localhost:11434").rstrip("/")
         self.timeout = int(cfg.get_path("llm.timeout_s", 120))
-        self.batch = int(cfg.get_path("llm.paragraphs_per_call", 3))
+        self.batch = int(cfg.get_path("llm.paragraphs_per_call", 6))
         self.temperature = float(cfg.get_path("llm.temperature", 0.2))
         self.rules = RulesEngine(cfg, style_name)   # fallback + clamps
         self.model: Optional[str] = None
         self.gpu = _detect_gpu()
+        self._cache: Dict[str, ProsodySegment] = {}
 
     # ---------------- public API ----------------
     def available(self) -> bool:
@@ -101,7 +148,6 @@ class OllamaProsody:
 
         explicit = self.cfg.get_path("llm.model", "auto")
         if explicit and explicit != "auto":
-            # Check if explicit model is available
             for have in tags:
                 if have == explicit or have.split(":")[0] == explicit.split(":")[0]:
                     return have
@@ -125,27 +171,95 @@ class OllamaProsody:
                 if want.split(":")[0] in have:
                     return have
 
-        # NEVER blind-fallback to tags[0]. If no safe model matches, use rule engine
         log.info("No suitable non-reasoning model found in Ollama (installed: %s). Using rule engine.", tags)
         return None
 
+    def get_chapter_tone_arc(self, chapter: Chapter) -> str:
+        """Query LLM once per chapter for a concise emotional tone arc."""
+        if not self.model or not chapter.paragraphs:
+            return "Even, thoughtful storytelling."
+        sample_text = "\n".join(p.text for p in chapter.paragraphs[:3])[:800]
+        prompt = (
+            f"Chapter: {chapter.title}\n"
+            f"Opening text:\n{sample_text}\n\n"
+            f"Describe the tone arc for this chapter in one short phrase (under 12 words), "
+            f"e.g. 'Calm reflection building toward urgent resolve'."
+        )
+        try:
+            r = requests.post(
+                f"{self.url}/api/generate",
+                json={
+                    "model": self.model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"num_predict": 30, "temperature": 0.2},
+                    "keep_alive": "15m",
+                },
+                timeout=15,
+            )
+            if r.status_code == 200:
+                arc = r.json().get("response", "").strip()
+                if arc:
+                    return arc
+        except Exception as e:
+            log.debug("Tone arc query skipped: %s", e)
+        return "Calm, engaging narration."
+
     def plan_chapter(self, chapter: Chapter, on_batch=None) -> List[ProsodySegment]:
-        """Plan a chapter; calls on_batch(done_paragraphs, total) for progress."""
+        """Plan a chapter; selective LLM for expressive lines, deterministic rules for narrative."""
         paras = chapter.paragraphs
-        segments: List[ProsodySegment] = []
         total = len(paras)
-        for i in range(0, total, self.batch):
-            batch = paras[i:i + self.batch]
-            segments.extend(self._plan_batch(batch))
+        if total == 0:
+            return []
+
+        tone_arc = self.get_chapter_tone_arc(chapter)
+        segments: List[Optional[ProsodySegment]] = [None] * total
+        llm_batch: List[Paragraph] = []
+        llm_indices: List[int] = []
+        prev_mood = "neutral"
+
+        for idx, p in enumerate(paras):
+            ck = hashlib.sha1((p.text.strip() + ":" + self.style_name).encode()).hexdigest()
+            if ck in self._cache:
+                segments[idx] = self._cache[ck]
+                continue
+
+            if is_expressive_paragraph(p.text, idx, total):
+                llm_batch.append(p)
+                llm_indices.append(idx)
+            else:
+                seg = self.rules.plan_paragraph(p.text, p.id)
+                segments[idx] = seg
+                self._cache[ck] = seg
+
+            if len(llm_batch) >= self.batch:
+                batch_segs = self._plan_batch(llm_batch, tone_arc=tone_arc, prev_mood=prev_mood)
+                for b_idx, s in zip(llm_indices, batch_segs):
+                    segments[b_idx] = s
+                    k = hashlib.sha1((paras[b_idx].text.strip() + ":" + self.style_name).encode()).hexdigest()
+                    self._cache[k] = s
+                    prev_mood = s.mood
+                llm_batch = []
+                llm_indices = []
+                if on_batch:
+                    on_batch(idx + 1, total)
+
+        if llm_batch:
+            batch_segs = self._plan_batch(llm_batch, tone_arc=tone_arc, prev_mood=prev_mood)
+            for b_idx, s in zip(llm_indices, batch_segs):
+                segments[b_idx] = s
+                k = hashlib.sha1((paras[b_idx].text.strip() + ":" + self.style_name).encode()).hexdigest()
+                self._cache[k] = s
             if on_batch:
-                on_batch(min(i + self.batch, total), total)
-        return segments
+                on_batch(total, total)
+
+        return [s or self.rules.plan_paragraph(paras[i].text, paras[i].id) for i, s in enumerate(segments)]
 
     def plan_paragraph(self, text: str, para_id: str) -> ProsodySegment:
         return self._plan_batch([Paragraph(id=para_id, text=text)])[0]
 
     # ---------------- internals ----------------
-    def _plan_batch(self, batch: List[Paragraph]) -> List[ProsodySegment]:
+    def _plan_batch(self, batch: List[Paragraph], tone_arc: str = "", prev_mood: str = "") -> List[ProsodySegment]:
         if self.model is None:
             self.model = self.pick_model()
         if not self.model:
@@ -155,8 +269,13 @@ class OllamaProsody:
         payload_text = "\n\n".join(
             json.dumps({"id": p.id, "text": p.text[:1200]}, ensure_ascii=False) for p in batch
         )
+        context_hint = f"Chapter emotional arc: {tone_arc}. " if tone_arc else ""
+        if prev_mood:
+            context_hint += f"Previous mood: {prev_mood}. "
+
         prompt = (
             f"Narration style: {self.style['desc']}.\n"
+            f"{context_hint}"
             f"Paragraphs:\n{payload_text}\n"
             f"Return the segments array with one entry per id ({', '.join(p.id for p in batch)})."
         )
@@ -176,6 +295,7 @@ class OllamaProsody:
                         "num_ctx": 4096,
                         "num_predict": 1024,
                     },
+                    "keep_alive": "15m",
                 },
                 timeout=self.timeout,
             )
@@ -198,20 +318,38 @@ class OllamaProsody:
                 out.append(self.rules.plan_paragraph(p.text, p.id))
                 continue
             seg = ProsodySegment(para_id=p.id, source="llm")
-            seg.mood = str(s.get("mood", "neutral"))[:20]
-            # emphasis words must appear in the paragraph text (verbatim-ish)
+            mood = str(s.get("mood", "neutral")).lower()
+            if mood not in MOOD_PROSODY_MAP:
+                mood = "neutral"
+            seg.mood = mood
+
+            # Map mood to rate/pitch deltas
+            deltas = MOOD_PROSODY_MAP[mood]
+            # If model supplied direct rate_delta/pitch_delta (legacy compatibility), use them
+            r_delta = s.get("rate_delta", deltas["rate_delta"])
+            p_delta = s.get("pitch_delta", deltas["pitch_delta"])
+
+            seg.rate_delta = int(_clamp(r_delta, -15, 15)) + st["base_rate_delta"]
+            seg.pitch_delta = int(_clamp(p_delta, -15, 15)) + st["base_pitch_delta"]
+            seg.rate_delta = max(-st["max_rate_delta"] - 5, min(st["max_rate_delta"] + 5, seg.rate_delta))
+            seg.pitch_delta = max(-st["max_pitch_delta"] - 5, min(st["max_pitch_delta"] + 5, seg.pitch_delta))
+
+            # Map pause bucket to milliseconds
+            pause_bucket = str(s.get("pause", "medium")).lower()
+            if "pause_after_ms" in s:
+                pause_ms = int(s["pause_after_ms"])
+            else:
+                pause_ms = PAUSE_BUCKET_MAP.get(pause_bucket, 450)
+            seg.pause_after_ms = int(_clamp(pause_ms, 0, 1500))
+
+            # emphasis words must appear in paragraph text
             lowered = p.text.lower()
             emph = []
-            for w in (s.get("emphasis") or [])[:4]:
+            for w in (s.get("emphasis") or [])[:3]:
                 w = str(w).strip().lower()
                 if w and w in lowered and w not in emph:
                     emph.append(w)
             seg.emphasis = emph[: self.rules.max_emph + 1]
-            seg.rate_delta = int(_clamp(s.get("rate_delta", 0), -15, 15)) + st["base_rate_delta"]
-            seg.pitch_delta = int(_clamp(s.get("pitch_delta", 0), -15, 15)) + st["base_pitch_delta"]
-            seg.rate_delta = max(-st["max_rate_delta"] - 5, min(st["max_rate_delta"] + 5, seg.rate_delta))
-            seg.pitch_delta = max(-st["max_pitch_delta"] - 5, min(st["max_pitch_delta"] + 5, seg.pitch_delta))
-            seg.pause_after_ms = int(_clamp(s.get("pause_after_ms", 400), 0, 1500))
             out.append(seg)
         return out
 

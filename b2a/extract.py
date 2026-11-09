@@ -16,7 +16,7 @@ import re
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
-from .clean import clean_paragraph_text, strip_markdown
+from .clean import clean_paragraph_text, load_lexicon, strip_markdown
 from .models import Book, Chapter, Paragraph
 
 CHAPTER_HEADING_RE = re.compile(
@@ -33,12 +33,12 @@ def _para_id(chapter_index: int, para_index: int) -> str:
     return f"c{chapter_index:02d}-p{para_index:03d}"
 
 
-def _make_paragraphs(chapter: Chapter, blocks: List[str], min_chars: int) -> None:
+def _make_paragraphs(chapter: Chapter, blocks: List[str], min_chars: int, lexicon: Optional[dict] = None) -> None:
     """Turn raw text blocks into cleaned Paragraph objects (merging tiny ones)."""
     cleaned: List[str] = []
     buffer = ""
     for block in blocks:
-        text = clean_paragraph_text(block)
+        text = clean_paragraph_text(block, lexicon=lexicon)
         if not text:
             continue
         if len(text) < min_chars and not _looks_like_heading(text):
@@ -53,6 +53,11 @@ def _make_paragraphs(chapter: Chapter, blocks: List[str], min_chars: int) -> Non
 
     for i, text in enumerate(cleaned):
         chapter.paragraphs.append(Paragraph(id=_para_id(chapter.index, i), text=text))
+
+
+def _is_skip_chapter_title(title: str) -> bool:
+    t = title.strip().lower()
+    return t in ("contents", "table of contents", "index", "copyright", "colophon", "title page")
 
 
 def _looks_like_heading(text: str) -> bool:
@@ -112,21 +117,27 @@ def extract_pdf(path: Path, cfg) -> Book:
 
     # --- running header/footer detection ------------------------------
     repeated = _running_lines(pages_text) if cfg.get_path("extract.strip_running_lines", True) else set()
+    lexicon = load_lexicon(cfg.get_path("lexicon.path"))
 
-    for idx, (title, p0, p1) in enumerate(spans, start=1):
-        chapter = Chapter(index=idx, title=title)
+    ch_idx = 1
+    for title, p0, p1 in spans:
+        if _is_skip_chapter_title(title):
+            continue
+        chapter = Chapter(index=ch_idx, title=title)
         blocks: List[str] = []
         for pno in range(p0, p1 + 1):
             blocks.extend(_pdf_page_blocks(pages_text[pno], repeated))
-        _make_paragraphs(chapter, blocks, cfg.get_path("extract.min_paragraph_chars", 25))
+        _make_paragraphs(chapter, blocks, cfg.get_path("extract.min_paragraph_chars", 25), lexicon=lexicon)
         if chapter.paragraphs:
             book.chapters.append(chapter)
+            ch_idx += 1
 
     doc.close()
     if not book.chapters:  # scanned/dead PDF — be explicit rather than silent
         raise ValueError(
-            f"No extractable text in {path.name}. It may be a scanned PDF "
-            f"(images only); OCR is out of scope for this build."
+            f"No extractable text found in '{path.name}'. It appears to be a scanned PDF "
+            f"(images only) without a digital text layer. Please run an OCR tool (e.g. "
+            f"ocrmypdf or Adobe Acrobat) on this document first."
         )
     return book
 
@@ -204,6 +215,7 @@ def extract_epub(path: Path, cfg) -> Book:
     )
 
     chapter_no = 0
+    lexicon = load_lexicon(cfg.get_path("lexicon.path"))
     for item in book_doc.get_items_of_type(ebooklib.ITEM_DOCUMENT):
         name = (item.get_name() or "").lower()
         if any(s in name for s in _SKIP_NAMES):
@@ -217,10 +229,12 @@ def extract_epub(path: Path, cfg) -> Book:
         blocks = [b for b in blocks if not re.fullmatch(r"[\s\-–—_=*#|>]+", b)]
         if not blocks:
             continue
+        title = _epub_title(soup, chapter_no + 1)
+        if _is_skip_chapter_title(title):
+            continue
         chapter_no += 1
-        title = _epub_title(soup, chapter_no)
         chapter = Chapter(index=chapter_no, title=title)
-        _make_paragraphs(chapter, blocks, cfg.get_path("extract.min_paragraph_chars", 25))
+        _make_paragraphs(chapter, blocks, cfg.get_path("extract.min_paragraph_chars", 25), lexicon=lexicon)
         if chapter.paragraphs:
             book.chapters.append(chapter)
 
@@ -313,14 +327,17 @@ def _split_by_headings(book: Book, lines: List[str], cfg, md_mode: bool) -> None
         sections.append((current_title, current))
 
     chapter_no = 0
+    lexicon = load_lexicon(cfg.get_path("lexicon.path"))
     for title, block_lines in sections:
+        if _is_skip_chapter_title(title):
+            continue
         block = "\n".join(block_lines)
         paras = [p.strip() for p in re.split(r"\n\s*\n", block) if p.strip()]
         if not paras:
             continue
         chapter_no += 1
         chapter = Chapter(index=chapter_no, title=title)
-        _make_paragraphs(chapter, paras, cfg.get_path("extract.min_paragraph_chars", 25))
+        _make_paragraphs(chapter, paras, cfg.get_path("extract.min_paragraph_chars", 25), lexicon=lexicon)
         if chapter.paragraphs:
             book.chapters.append(chapter)
 

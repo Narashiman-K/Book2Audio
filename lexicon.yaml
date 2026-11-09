@@ -1,0 +1,14 @@
+# book2audio pronunciation lexicon
+# Add custom phonetic spellings for names, Sanskrit/Hindi words, abbreviations, and foreign terms.
+# Words are matched as whole terms (case-insensitive for acronyms/proper nouns).
+replacements:
+  "AI": "A.I."
+  "API": "A.P.I."
+  "Naval": "Nuh-vaal"
+  "Ravikant": "Rah-vee-kaant"
+  "Bhagavad Gita": "Bhag-avad Geeta"
+  "Upanishads": "Oo-pani-shads"
+  "dharma": "dhar-ma"
+  "karma": "kar-ma"
+  "Sanskrit": "Sans-krit"
+  "et al.": "and others"

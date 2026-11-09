@@ -3,11 +3,14 @@ and ID3 metadata. ffmpeg does the heavy lifting; pydub stitches.
 """
 from __future__ import annotations
 
+import json
 import logging
+import math
+import os
+import re
 import shutil
 import subprocess
 import tempfile
-import os
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -119,9 +122,11 @@ def assemble_chapter(
     bitrate: str = "96k",
     tempo: float = 1.0,
     progress_cb=None,
+    out_wav: Optional[Path] = None,
 ) -> float:
-    """Stitch paragraph audio into one normalized chapter MP3.
+    """Stitch paragraph audio into one normalized chapter MP3 (and optional master WAV).
 
+    Performs two-pass EBU R128 loudness normalization for consistent volume across chapters.
     Returns the chapter duration in seconds.
     """
     if not chunks:
@@ -145,14 +150,44 @@ def assemble_chapter(
         if progress_cb and (i % 25 == 0 or i == len(chunks) - 1):
             progress_cb(i + 1, len(chunks))
 
-    # export intermediate wav (pydub can't loudnorm)
     with tempfile.TemporaryDirectory() as td:
-        tmp_wav = Path(td) / "chapter.wav"
+        tmp_wav = Path(td) / "chapter_raw.wav"
         chapter.export(str(tmp_wav), format="wav")
 
-        # High-pass filter at 90 Hz cuts sub-bass rumble, plosives, and end-of-sentence "woof"
-        # artifacts before loudness normalization, preventing loudnorm volume-pumping.
+        # Two-pass loudness normalization:
+        # Pass 1: Measure input integrated loudness, true peak, and dynamic range
         filters = ["highpass=f=90", f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11"]
+        try:
+            pass1_cmd = [
+                find_ffmpeg(), "-hide_banner", "-y",
+                "-i", str(tmp_wav),
+                "-af", f"highpass=f=90,loudnorm=I={target_lufs}:TP=-1.5:LRA=11:print_format=json",
+                "-f", "null", "-",
+            ]
+            p1 = subprocess.run(pass1_cmd, capture_output=True, text=True, timeout=300)
+            m = re.search(r"\{\s*\"input_i\"[\s\S]*?\}", p1.stderr or p1.stdout or "")
+            if m:
+                s = json.loads(m.group(0))
+                # Validate that measured stats are finite numbers (failsafe for silent test audio)
+                valid = True
+                for k in ("input_i", "input_tp", "input_lra", "input_thresh", "target_offset"):
+                    v = float(s.get(k, 0))
+                    if math.isinf(v) or math.isnan(v):
+                        valid = False
+                        break
+                if valid and -99.0 <= float(s.get("input_i", 0)) <= 0.0:
+                    filters = [
+                        "highpass=f=90",
+                        f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11:"
+                        f"measured_I={s.get('input_i', -24)}:"
+                        f"measured_TP={s.get('input_tp', -2)}:"
+                        f"measured_LRA={s.get('input_lra', 7)}:"
+                        f"measured_thresh={s.get('input_thresh', -34)}:"
+                        f"offset={s.get('target_offset', 0)}:linear=true",
+                    ]
+        except Exception as e:
+            log.debug("Loudnorm pass 1 failed (%s) — using single-pass filter", e)
+
         if tempo and abs(tempo - 1.0) > 0.01:
             t = max(0.5, min(2.0, tempo))
             filters.append(f"atempo={t}")
@@ -164,14 +199,31 @@ def assemble_chapter(
             "-metadata", f"track={track}/{total_tracks}",
             "-metadata", "comment=Made with book2audio - personal/family use only",
         ]
-        _run_ffmpeg([
-            "-i", str(tmp_wav),
-            "-af", ",".join(filters),
-            "-ar", "22050", "-ac", "1",
-            "-codec:a", "libmp3lame", "-b:a", bitrate,
-            *meta,
-            str(out_mp3),
-        ])
+
+        if out_wav:
+            out_wav.parent.mkdir(parents=True, exist_ok=True)
+            _run_ffmpeg([
+                "-i", str(tmp_wav),
+                "-af", ",".join(filters),
+                "-ar", "22050", "-ac", "1",
+                str(out_wav),
+            ])
+            # Encode MP3 directly from the pristine normalized WAV
+            _run_ffmpeg([
+                "-i", str(out_wav),
+                "-codec:a", "libmp3lame", "-b:a", bitrate,
+                *meta,
+                str(out_mp3),
+            ])
+        else:
+            _run_ffmpeg([
+                "-i", str(tmp_wav),
+                "-af", ",".join(filters),
+                "-ar", "22050", "-ac", "1",
+                "-codec:a", "libmp3lame", "-b:a", bitrate,
+                *meta,
+                str(out_mp3),
+            ])
 
     return len(chapter) / 1000.0
 
@@ -182,8 +234,13 @@ def assemble_m4b(
     book_title: str,
     author: str,
     bitrate: str = "96k",
+    cover_image: Optional[Path] = None,
 ) -> Path:
-    """Concatenate chapter audio into a single chaptered .m4b (AAC) container."""
+    """Concatenate chapter audio into a single chaptered .m4b (AAC) container.
+
+    Prefers lossless chapter WAV files when available to avoid MP3 transcoding degradation.
+    Optionally embeds cover artwork.
+    """
     if not chapter_files:
         raise ValueError("no chapters to assemble into M4B")
 
@@ -193,7 +250,11 @@ def assemble_m4b(
 
         lines = []
         for ch in chapter_files:
-            p = Path(ch["file"]).resolve().as_posix()
+            # Prefer pristine WAV if it exists, fallback to MP3
+            src = ch.get("wav_file") or ch.get("file")
+            if not src or not Path(src).exists():
+                src = ch.get("file")
+            p = Path(src).resolve().as_posix()
             lines.append(f"file '{p}'")
         concat_list.write_text("\n".join(lines), encoding="utf-8")
 
@@ -224,17 +285,32 @@ def assemble_m4b(
 
         meta_file.write_text("\n".join(meta_lines), encoding="utf-8")
 
-        _run_ffmpeg([
+        cmd = [
             "-f", "concat",
             "-safe", "0",
             "-i", str(concat_list),
             "-i", str(meta_file),
+        ]
+
+        if cover_image and Path(cover_image).is_file():
+            cmd.extend(["-i", str(Path(cover_image).resolve())])
+            cmd.extend([
+                "-map", "0:a",
+                "-map", "2:v",
+                "-c:v", "copy",
+                "-disposition:v:0", "attached_pic",
+            ])
+        else:
+            cmd.extend(["-map", "0:a", "-vn"])
+
+        cmd.extend([
             "-map_metadata", "1",
             "-c:a", "aac",
             "-b:a", bitrate,
-            "-vn",
             str(out_m4b),
         ])
+
+        _run_ffmpeg(cmd)
 
     return out_m4b
 

@@ -11,6 +11,7 @@ STYLES: Dict[str, dict] = {
         "base_pitch_delta": 0,
         "emphasis_rate_delta": -12,   # slow down on stressed words
         "emphasis_pitch_delta": 6,    # slight lift on stressed words
+        "dialogue_pitch_delta": 3,    # character speech colouring
         "pause_scale": 1.0,
         "max_rate_delta": 10,
         "max_pitch_delta": 10,
@@ -21,6 +22,7 @@ STYLES: Dict[str, dict] = {
         "base_pitch_delta": 2,
         "emphasis_rate_delta": -15,
         "emphasis_pitch_delta": 10,
+        "dialogue_pitch_delta": 4,
         "pause_scale": 0.7,
         "max_rate_delta": 15,
         "max_pitch_delta": 15,
@@ -31,6 +33,7 @@ STYLES: Dict[str, dict] = {
         "base_pitch_delta": 0,
         "emphasis_rate_delta": -14,
         "emphasis_pitch_delta": 8,
+        "dialogue_pitch_delta": 5,
         "pause_scale": 1.25,
         "max_rate_delta": 12,
         "max_pitch_delta": 14,
@@ -41,6 +44,7 @@ STYLES: Dict[str, dict] = {
         "base_pitch_delta": 0,
         "emphasis_rate_delta": 0,
         "emphasis_pitch_delta": 0,
+        "dialogue_pitch_delta": 0,
         "pause_scale": 1.0,
         "max_rate_delta": 0,
         "max_pitch_delta": 0,

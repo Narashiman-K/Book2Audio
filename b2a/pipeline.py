@@ -128,20 +128,29 @@ class Pipeline:
         for chapter in book.chapters:
             out_name = f"{chapter.index:02d} - {_safe(chapter.title)}.mp3"
             out_path = out_book_dir / out_name
+            ch_wav = build_dir / f"chapter_{chapter.index:02d}.wav"
             if out_path.exists() and not force:
                 dur = probe_duration(out_path)
-                chapter_results.append({"chapter": chapter.index, "title": chapter.title,
-                                        "file": str(out_path), "seconds": dur, "skipped": True})
+                chapter_results.append({
+                    "chapter": chapter.index, "title": chapter.title,
+                    "file": str(out_path),
+                    "wav_file": str(ch_wav) if ch_wav.exists() else None,
+                    "seconds": dur, "skipped": True,
+                })
                 say(f"Chapter {chapter.index}: exists, skipped ({human_duration(dur)})")
                 continue
 
             t0 = time.time()
-            mp3, n_paras = self._render_chapter(
+            mp3, ch_wav, n_paras = self._render_chapter(
                 book, chapter, build_dir, gpros, pauses, style_name,
                 out_path=out_path, tempo=tempo, bitrate=bitrate, lufs=lufs, say=say)
             dur = probe_duration(mp3)
-            chapter_results.append({"chapter": chapter.index, "title": chapter.title,
-                                    "file": str(mp3), "seconds": dur, "paragraphs": n_paras})
+            chapter_results.append({
+                "chapter": chapter.index, "title": chapter.title,
+                "file": str(mp3),
+                "wav_file": str(ch_wav) if ch_wav.exists() else None,
+                "seconds": dur, "paragraphs": n_paras,
+            })
             say(f"Chapter {chapter.index} '{chapter.title}': {n_paras} paragraphs -> "
                 f"{human_duration(dur)}  ({time.time() - t0:.1f}s)")
 
@@ -163,10 +172,32 @@ class Pipeline:
         }
         if m4b and chapter_results:
             m4b_path = out_book_dir / f"{slugify(book.title)}.m4b"
-            say(f"Assembling M4B audiobook: {m4b_path.name} ...")
-            assemble_m4b(chapter_results, m4b_path, book.title, book.author, bitrate=bitrate)
+            # Discover cover image if present
+            cover_cand = None
+            explicit_cover = self.cfg.get_path("book.cover")
+            if explicit_cover and Path(explicit_cover).is_file():
+                cover_cand = Path(explicit_cover)
+            elif book.source_path:
+                src_dir = Path(book.source_path).parent
+                for name in ("cover.jpg", "cover.png", "cover.jpeg", "folder.jpg"):
+                    if (src_dir / name).is_file():
+                        cover_cand = src_dir / name
+                        break
+            if not cover_cand:
+                for name in ("cover.jpg", "cover.png", "cover.jpeg"):
+                    if Path(name).is_file():
+                        cover_cand = Path(name)
+                        break
+
+            say(f"Assembling M4B audiobook (direct lossless WAV -> AAC): {m4b_path.name} ...")
+            assemble_m4b(chapter_results, m4b_path, book.title, book.author,
+                         bitrate=bitrate, cover_image=cover_cand)
             manifest["m4b_file"] = str(m4b_path)
-            say(f"M4B audiobook ready: {m4b_path.name}")
+            if cover_cand:
+                manifest["cover_image"] = str(cover_cand)
+                say(f"M4B audiobook ready with embedded cover art: {m4b_path.name}")
+            else:
+                say(f"M4B audiobook ready: {m4b_path.name}")
 
         out_book_dir.mkdir(parents=True, exist_ok=True)
         (out_book_dir / "manifest.json").write_text(
@@ -264,6 +295,7 @@ class Pipeline:
                 raise RuntimeError(f"chunk audio missing for {para.id} ({chunk_id})")
             ordered.append((path, int(seg_dict.get("pause_after_ms", 400))))
 
+        ch_wav = build_dir / f"chapter_{chapter.index:02d}.wav"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         duration = assemble_chapter(
             ordered, out_path,
@@ -276,8 +308,9 @@ class Pipeline:
             target_lufs=lufs,
             bitrate=bitrate,
             tempo=tempo,
+            out_wav=ch_wav,
         )
-        return out_path, len(chapter.paragraphs)
+        return out_path, ch_wav, len(chapter.paragraphs)
 
     # ------------------------------------------------------------------
     def _chunk_id(self, text: str, gpros: dict, seg) -> str:

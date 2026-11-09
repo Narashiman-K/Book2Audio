@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -354,6 +355,124 @@ def cmd_bench(args) -> int:
     return 0
 
 
+def cmd_audition(args) -> int:
+    """Render a test passage in 4 prosody variants (plain, speed, emphasis, full) to audition voice obedience."""
+    cfg = load_config(args.config)
+    overrides = {}
+    if args.voice:
+        overrides["tts.voice"] = args.voice
+    if args.speed is not None:
+        overrides["tts.speed"] = args.speed
+    if args.pitch is not None:
+        overrides["tts.pitch"] = args.pitch
+    if args.style:
+        overrides["style"] = args.style
+    if args.engine:
+        overrides["tts.engine"] = args.engine
+    apply_overrides(cfg, overrides)
+
+    _setup_logging(False)
+    from .audio import find_ffmpeg, probe_duration
+    from .models import ProsodySegment
+    from .prosody.rules import RulesEngine
+    from .prosody.ssml import build_plain_text, build_sapi_xml, build_ssml, compute_global_prosody
+    from .segment import split_sentences
+    from .tts import create_engine
+    from .tts.base import ChunkJob
+
+    engine = create_engine(cfg, cfg.get_path("style", "warm"), prefer=args.engine)
+    out_dir = Path(args.out).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    passage = (args.passage or "").strip()
+    if not passage:
+        passage = (
+            "She paused at the water's edge. 'Do you hear that?' she asked softly. "
+            "The lantern breathed with an impossible, radiant light."
+        )
+
+    print("=========================================================")
+    print("                book2audio Voice Audition                ")
+    print("=========================================================")
+    print(f"Engine:  {engine.name} ({engine.chosen_voice})")
+    print(f"Passage: \"{passage}\"\n")
+
+    style_name = cfg.get_path("style", "warm")
+    pauses = cfg.get_path("pauses", {}) or {}
+    sentences = split_sentences(passage, 200)
+
+    # 1. Plain (no prosody deltas, no emphasis)
+    seg_plain = ProsodySegment(para_id="aud-01", mood="neutral", emphasis=[], rate_delta=0, pitch_delta=0)
+    # 2. Speed only (+20% rate or configured speed)
+    gpros_speed = compute_global_prosody(cfg.get_path("tts.speed", 12), 0, cfg)
+    seg_speed = ProsodySegment(para_id="aud-02", mood="neutral", emphasis=[], rate_delta=0, pitch_delta=0)
+    # 3. Emphasis only (rules detect key words, rate/pitch base 0)
+    rules = RulesEngine(cfg, style_name)
+    seg_emph = rules.plan_paragraph(passage, "aud-03")
+    seg_emph.rate_delta = 0
+    seg_emph.pitch_delta = 0
+    # 4. Full prosody
+    gpros_full = compute_global_prosody(cfg.get_path("tts.speed", 12), cfg.get_path("tts.pitch", 2), cfg)
+    seg_full = rules.plan_paragraph(passage, "aud-04")
+
+    variants = [
+        ("01_plain", "Plain text (base voice)", seg_plain, 0, 0),
+        ("02_speed_only", f"Speed only (+{gpros_speed['rate_pct']}% rate)", seg_speed, gpros_speed["rate_pct"], 0),
+        ("03_emphasis_only", f"Emphasis only ({', '.join(seg_emph.emphasis) or 'none'})", seg_emph, 0, 0),
+        ("04_full", "Full prosody (speed + pitch + emphasis + dialogue colouring)", seg_full, gpros_full["rate_pct"], gpros_full["pitch_pct"]),
+    ]
+
+    jobs = []
+    for var_id, _, seg, r_pct, p_pct in variants:
+        if engine.name == "sapi":
+            markup = build_sapi_xml(passage, sentences, seg, r_pct, p_pct, style_name, pauses)
+        elif engine.name in ("piper", "xtts", "silent"):
+            markup = build_plain_text(passage, sentences, seg)
+        else:
+            markup = build_ssml(passage, sentences, seg, r_pct, p_pct, style_name, pauses)
+        jobs.append(ChunkJob(id=var_id, text=passage, ssml=markup, rate_delta=seg.rate_delta))
+
+    tmp_build = out_dir / "_build"
+    tmp_build.mkdir(parents=True, exist_ok=True)
+    results = engine.synthesize_batch(jobs, tmp_build)
+
+    durations = {}
+    ffmpeg = find_ffmpeg()
+    print("Rendered Audition Audio Files:")
+    for (var_id, label, _, _, _), res in zip(variants, results):
+        if not res.ok:
+            print(f"  [-] {label:32}: FAILED ({res.error})")
+            continue
+        out_wav = out_dir / f"{var_id}.wav"
+        # Convert or copy to standard wav
+        subprocess.run(
+            [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", str(res.path), "-ar", "22050", "-ac", "1", str(out_wav)],
+            check=False,
+        )
+        dur = probe_duration(out_wav) if out_wav.exists() else 0.0
+        durations[var_id] = dur
+        print(f"  [+] {label:55}: {dur:4.2f}s -> {out_wav.name}")
+
+    print("\n---------------------------------------------------------")
+    print("Voice Obedience Verification:")
+    p_dur = durations.get("01_plain", 0.0)
+    s_dur = durations.get("02_speed_only", 0.0)
+    if p_dur > 0 and s_dur > 0:
+        delta = p_dur - s_dur
+        ratio = s_dur / p_dur
+        if ratio < 0.95:
+            print(f"  [+] Voice obeyed speed markup: plain {p_dur:.2f}s -> speed {s_dur:.2f}s ({ratio:.1%} duration)")
+        else:
+            print(f"  [!] Voice ignored speed markup: plain {p_dur:.2f}s vs speed {s_dur:.2f}s ({ratio:.1%}).")
+            print("      book2audio will automatically apply ffmpeg time-stretching (atempo) to guarantee speed.")
+    else:
+        print("  [i] Duration checks complete.")
+
+    print(f"\nAll files saved to: {out_dir}")
+    print("=========================================================\n")
+    return 0
+
+
 def cmd_demo(args) -> int:
     """Convert the bundled sample book end-to-end."""
     cfg = load_config(args.config)
@@ -412,6 +531,16 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--clone-voice", metavar="WAV", help="clone WAV sample for xtts benchmark")
     b.add_argument("--llm", choices=["auto", "ollama", "off"])
     b.set_defaults(func=cmd_bench)
+
+    aud = sub.add_parser("audition", help="render a passage in 4 prosody variants to test voice obedience")
+    aud.add_argument("passage", nargs="?", help="text to audition (default: sample evocative passage)")
+    aud.add_argument("--out", default="audition", help="folder to save the 4 audition WAVs")
+    aud.add_argument("--voice", help="voice name substring")
+    aud.add_argument("--speed", type=float, help="speed scale (0-20, 10=normal, 12=+20%%)")
+    aud.add_argument("--pitch", type=float, help="pitch scale (-10..10, 0=normal)")
+    aud.add_argument("--style", choices=["warm", "motivational", "storyteller", "minimal"])
+    aud.add_argument("--engine", choices=["auto", "winrt", "sapi", "piper", "xtts", "silent"])
+    aud.set_defaults(func=cmd_audition)
 
     e = sub.add_parser("demo", help="convert the bundled sample book")
     e.add_argument("--out", default="output")

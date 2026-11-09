@@ -60,3 +60,37 @@ def test_minimal_style_no_emphasis_deltas():
     ssml = build_ssml(seg.emphasis and "You must begin today!" or "x",
                       ["You must begin today!"], seg, 0, 0, "minimal", {})
     assert "<prosody" not in ssml
+
+
+def test_contrast_and_superlative_emphasis():
+    engine = RulesEngine(cfg(), "warm")
+    seg = engine.plan_paragraph("This is the best path forward, but we must stay vigilant.", "c01-p007")
+    words = set(seg.emphasis)
+    assert words & {"best", "but", "must"}
+
+
+def test_expressive_paragraph_detection():
+    from b2a.prosody.llm import is_expressive_paragraph
+    # Dialogue
+    assert is_expressive_paragraph('"Wait for me!" she cried.', 2, 10)
+    # Questions
+    assert is_expressive_paragraph("Why did he leave the lantern dark?", 3, 10)
+    # Punchy lines (< 70 chars)
+    assert is_expressive_paragraph("Silence fell.", 4, 10)
+    # Chapter boundary
+    assert is_expressive_paragraph("The morning dawned over the rolling hills of grey granite.", 0, 10)
+    # Normal exposition (not expressive)
+    assert not is_expressive_paragraph(
+        "The carriage rolled along the quiet cobblestones of the village street while the villagers were finishing their daily chores before twilight.",
+        5, 10
+    )
+
+
+def test_dialogue_colouring_in_ssml():
+    from b2a.models import ProsodySegment
+    from b2a.prosody.ssml import build_ssml
+    seg = ProsodySegment(para_id="c01-p008", mood="neutral", emphasis=[], rate_delta=0, pitch_delta=0)
+    s = build_ssml('She whispered, "Sleep well," and left.', ['She whispered, "Sleep well," and left.'],
+                   seg, 0, 0, "warm", {})
+    assert '<prosody pitch="+3%">' in s
+

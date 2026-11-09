@@ -22,6 +22,11 @@ _EXCL_RE = re.compile(r"!")
 _Q_END_RE = re.compile(r"\?\s*[\"'”’)\]]?\s*$")
 _DASH_RE = re.compile(r"\s[—–]\s")
 
+# Sentence-level contrast words, negations, and superlatives
+_CONTRAST_WORDS = {"but", "however", "although", "yet", "only", "never", "always", "instead"}
+_NEGATION_WORDS = {"not", "neither", "nowhere", "cannot", "hardly", "scarcely"}
+_SUPERLATIVE_WORDS = {"best", "worst", "greatest", "most", "least", "first", "last", "essential", "crucial"}
+
 
 class RulesEngine:
     def __init__(self, cfg: Config, style_name: str = "warm"):
@@ -74,7 +79,17 @@ class RulesEngine:
             if re.search(rf"\b{re.escape(w)}\b", lowered) and w not in seen:
                 picked.append(w)
                 seen.add(w)
-        # 3) short key phrase inside quotes (the emotional core of dialogue)
+        # 3) contrast, negation, superlative words (sentence-level rhetorical stress)
+        for w_set in (_CONTRAST_WORDS, _NEGATION_WORDS, _SUPERLATIVE_WORDS):
+            if len(picked) >= self.max_emph * 2:
+                break
+            for w in w_set:
+                if len(picked) >= self.max_emph * 2:
+                    break
+                if re.search(rf"\b{re.escape(w)}\b", lowered) and w not in seen:
+                    picked.append(w)
+                    seen.add(w)
+        # 4) short key phrase inside quotes (the emotional core of dialogue)
         if quote and len(quote.group(1).split()) <= 4:
             picked.append(quote.group(1))
         seg.emphasis = picked[: max(self.max_emph, 1) + 1]

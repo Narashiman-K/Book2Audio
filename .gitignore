@@ -40,6 +40,7 @@ models/*
 output/
 my_audiobooks/
 test_output/
+audition/
 _build/
 *.wav
 *.mp3

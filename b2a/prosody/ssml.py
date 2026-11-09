@@ -142,28 +142,39 @@ def _find_spans(sentence: str, emphasis: List[str]) -> List[tuple]:
 
 
 def _render_sentence(sentence: str, emphasis: List[str], st: dict, clause_break: int) -> str:
-    """Escape sentence, wrap emphasized spans in prosody, add clause breaks."""
+    """Escape sentence, wrap emphasized spans in prosody, add clause breaks, color dialogue."""
+    dialogue_pitch = int(st.get("dialogue_pitch_delta", 0))
+
     # minimal style (or zero emphasis deltas): never wrap words
     if st["emphasis_rate_delta"] == 0 and st["emphasis_pitch_delta"] == 0:
-        return _clause_breaks(sentence, clause_break)
-    spans = _find_spans(sentence, emphasis)[:2]  # hard cap: 2 stressed words/sentence
+        return _clause_breaks(sentence, clause_break, dialogue_pitch)
+
+    max_per_sent = int(st.get("max_per_sentence", 2))
+    spans = _find_spans(sentence, emphasis)[:max_per_sent]
 
     out: List[str] = []
     pos = 0
     for (s, e) in spans:
-        out.append(_clause_breaks(sentence[pos:s], clause_break))
+        out.append(_clause_breaks(sentence[pos:s], clause_break, dialogue_pitch))
         word = sentence[s:e]
         out.append(
             f'<prosody rate="{st["emphasis_rate_delta"]:+d}%" '
             f'pitch="{st["emphasis_pitch_delta"]:+d}%">{escape(word)}</prosody>'
         )
         pos = e
-    out.append(_clause_breaks(sentence[pos:], clause_break))
+    out.append(_clause_breaks(sentence[pos:], clause_break, dialogue_pitch))
     return "".join(out)
 
 
-def _clause_breaks(text: str, clause_break_ms: int) -> str:
+def _clause_breaks(text: str, clause_break_ms: int, dialogue_pitch: int = 0) -> str:
     escaped = escape(text)
+    if dialogue_pitch != 0:
+        # Colour quoted character speech inside raw text (avoids touching any XML prosody attributes)
+        escaped = re.sub(
+            r'([“"])([^”"]{2,})([”"])',
+            rf'\1<prosody pitch="{dialogue_pitch:+d}%">\2</prosody>\3',
+            escaped,
+        )
     if clause_break_ms > 0:
         escaped = re.sub(r"([;:])\s+", rf'\1<break time="{clause_break_ms}ms"/> ', escaped)
     return escaped
