@@ -38,6 +38,7 @@ models/*
 
 # Generated audio outputs & cache
 output/
+output_kokoro/
 my_audiobooks/
 test_output/
 audition/

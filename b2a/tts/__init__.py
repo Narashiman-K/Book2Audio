@@ -24,14 +24,14 @@ def create_engine(cfg: Config, style_name: str = "warm", prefer: Optional[str] =
             return None
 
     order = {
+        "kokoro": [".kokoro_engine.KokoroTTS", ".windows.WindowsWinrtTTS", ".silent.SilentTTS"],
         "winrt":  [".windows.WindowsWinrtTTS", ".piper_local.PiperTTS", ".silent.SilentTTS"],
         "sapi":   [".sapi.SapiTTS", ".piper_local.PiperTTS", ".silent.SilentTTS"],
         "piper":  [".piper_local.PiperTTS", ".silent.SilentTTS"],
         "xtts":   [".xtts_local.XttsTTS", ".piper_local.PiperTTS", ".silent.SilentTTS"],
         "silent": [".silent.SilentTTS"],
-        # NOTE: xtts is deliberately NOT in the auto chain — it pulls in
-        # PyTorch and a 1.8 GB model, so it is opt-in via --engine xtts.
-        "auto":   [".windows.WindowsWinrtTTS", ".sapi.SapiTTS",
+        # Kokoro is now the primary high-fidelity neural engine in auto when installed
+        "auto":   [".kokoro_engine.KokoroTTS", ".windows.WindowsWinrtTTS", ".sapi.SapiTTS",
                    ".piper_local.PiperTTS", ".silent.SilentTTS"],
     }
     chain = order.get(engine_name, order["auto"])

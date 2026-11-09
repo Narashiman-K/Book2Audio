@@ -168,6 +168,18 @@ def cmd_doctor(args) -> int:
     if sys.platform == "win32" and sapi.available():
         print("[+] SAPI fallback voices:", [v["name"] for v in sapi.list_voices()][:3])
 
+    # kokoro neural tts
+    try:
+        from .tts.kokoro_engine import KokoroTTS
+        k = KokoroTTS(cfg)
+        if k.available():
+            v_count = len(k.list_voices())
+            print(f"[+] Kokoro-82M neural TTS installed & ready ({v_count} voices — default: {k.chosen_voice})")
+        else:
+            print("[i] Kokoro-82M model not downloaded into models/kokoro/")
+    except Exception as e:
+        print(f"[i] Kokoro not available: {e}")
+
     # piper
     try:
         import piper  # noqa: F401
@@ -333,7 +345,7 @@ def cmd_bench(args) -> int:
         sentences = split_sentences(p.text, int(cfg.get_path("extract.max_sentence_chars", 200)))
         if engine.name == "sapi":
             markup = build_sapi_xml(p.text, sentences, plan, gpros["rate_pct"], gpros["pitch_pct"], style_name, pauses)
-        elif engine.name in ("piper", "xtts", "silent"):
+        elif engine.name in ("piper", "xtts", "silent", "kokoro"):
             markup = build_plain_text(p.text, sentences, plan)
         else:
             markup = build_ssml(p.text, sentences, plan, gpros["rate_pct"], gpros["pitch_pct"], style_name, pauses)
@@ -449,7 +461,7 @@ def cmd_audition(args) -> int:
     for var_id, _, seg, r_pct, p_pct in variants:
         if engine.name == "sapi":
             markup = build_sapi_xml(passage, sentences, seg, r_pct, p_pct, style_name, pauses)
-        elif engine.name in ("piper", "xtts", "silent"):
+        elif engine.name in ("piper", "xtts", "silent", "kokoro"):
             markup = build_plain_text(passage, sentences, seg)
         else:
             markup = build_ssml(passage, sentences, seg, r_pct, p_pct, style_name, pauses)
@@ -526,7 +538,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--speed", type=float, help="0-20, 10=normal (12 = +20%%)")
     c.add_argument("--pitch", type=float, help="-10..10, 0=normal")
     c.add_argument("--style", choices=["warm", "motivational", "storyteller", "minimal"])
-    c.add_argument("--engine", choices=["auto", "winrt", "sapi", "piper", "xtts", "silent"])
+    c.add_argument("--engine", choices=["auto", "kokoro", "winrt", "sapi", "piper", "xtts", "silent"])
     c.add_argument("--clone-voice", metavar="WAV",
                    help="use YOUR voice: path to a 10-60 s WAV sample "
                         "(engine xtts; see README 'Use your own voice')")
@@ -542,7 +554,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.set_defaults(func=cmd_convert)
 
     lv = sub.add_parser("list-voices", help="list installed voices for the chosen engine")
-    lv.add_argument("--engine", choices=["auto", "winrt", "sapi", "piper", "xtts", "silent"])
+    lv.add_argument("--engine", choices=["auto", "kokoro", "winrt", "sapi", "piper", "xtts", "silent"])
     lv.set_defaults(func=cmd_list_voices)
 
     d = sub.add_parser("doctor", help="check environment (ffmpeg, voices, ollama)")
@@ -550,7 +562,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     b = sub.add_parser("bench", help="benchmark LLM & TTS throughput and project novel build times")
     b.add_argument("book", nargs="?", help="optional book to benchmark (default: sample book)")
-    b.add_argument("--engine", choices=["auto", "winrt", "sapi", "piper", "xtts", "silent"])
+    b.add_argument("--engine", choices=["auto", "kokoro", "winrt", "sapi", "piper", "xtts", "silent"])
     b.add_argument("--voice", help="voice name substring")
     b.add_argument("--clone-voice", metavar="WAV", help="clone WAV sample for xtts benchmark")
     b.add_argument("--llm", choices=["auto", "ollama", "off"])
@@ -563,7 +575,7 @@ def build_parser() -> argparse.ArgumentParser:
     aud.add_argument("--speed", type=float, help="speed scale (0-20, 10=normal, 12=+20%%)")
     aud.add_argument("--pitch", type=float, help="pitch scale (-10..10, 0=normal)")
     aud.add_argument("--style", choices=["warm", "motivational", "storyteller", "minimal"])
-    aud.add_argument("--engine", choices=["auto", "winrt", "sapi", "piper", "xtts", "silent"])
+    aud.add_argument("--engine", choices=["auto", "kokoro", "winrt", "sapi", "piper", "xtts", "silent"])
     aud.set_defaults(func=cmd_audition)
 
     e = sub.add_parser("demo", help="convert the bundled sample book")

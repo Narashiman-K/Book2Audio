@@ -272,9 +272,9 @@ class Pipeline:
                 markup = build_sapi_xml(para.text, sentences, seg,
                                         gpros["rate_pct"], gpros["pitch_pct"],
                                         style_name, pauses)
-            elif self.engine.name in ("piper", "xtts", "silent"):
-                # no-SSML engines: plain text, prosody carried by punctuation
-                # and (for xtts/piper) post-processing
+            elif self.engine.name in ("piper", "xtts", "silent", "kokoro"):
+                # no-SSML neural engines: plain text, prosody carried by punctuation
+                # and per-paragraph rate_delta
                 markup = build_plain_text(para.text, sentences, seg)
             else:
                 markup = build_ssml(para.text, sentences, seg,
