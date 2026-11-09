@@ -1,7 +1,6 @@
 """book2audio Local Web Studio UI server and speed-reader API."""
 from __future__ import annotations
 
-import cgi
 import io
 import json
 import logging
@@ -415,20 +414,38 @@ class StudioHandler(SimpleHTTPRequestHandler):
         self._send_json({"ok": True, "message": "Synthesis initiated"})
 
     def _handle_upload(self):
-        ctype, pdict = cgi.parse_header(self.headers.get("Content-Type", ""))
-        if ctype != "multipart/form-data":
+        content_type = self.headers.get("Content-Type", "")
+        if "multipart/form-data" not in content_type:
             return self._send_json({"ok": False, "error": "Invalid Content-Type"})
 
-        pdict["boundary"] = bytes(pdict["boundary"], "utf-8")
-        fields = cgi.parse_multipart(self.rfile, pdict)
-        files = fields.get("book_file", [])
-        if not files:
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+
+        # Parse multipart form data using standard library email.parser (Python 3.14+ PEP 594 compliant)
+        import email.policy
+        from email.parser import BytesParser
+
+        full_payload = f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8") + body
+        msg = BytesParser(policy=email.policy.default).parsebytes(full_payload)
+
+        file_bytes = None
+        orig_filename = "uploaded_book.epub"
+
+        if msg.is_multipart():
+            for part in msg.iter_parts():
+                if part.get_param("name", header="content-disposition") == "book_file" or part.get_filename():
+                    file_bytes = part.get_payload(decode=True)
+                    if part.get_filename():
+                        orig_filename = part.get_filename()
+                    break
+
+        if not file_bytes:
             return self._send_json({"ok": False, "error": "No file uploaded"})
 
         upload_dir = self.b2a_dir / "uploads"
         upload_dir.mkdir(exist_ok=True)
-        uploaded_path = upload_dir / "uploaded_book.epub"
-        uploaded_path.write_bytes(files[0])
+        uploaded_path = upload_dir / orig_filename
+        uploaded_path.write_bytes(file_bytes)
 
         cfg = load_config(self.b2a_dir / "config.yaml")
         try:
