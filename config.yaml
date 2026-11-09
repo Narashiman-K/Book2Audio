@@ -1,0 +1,112 @@
+# ============================================================
+#  book2audio — configuration
+#  Everything is local. No cloud. No API keys.
+# ============================================================
+
+# ---------- Voice / TTS ----------
+tts:
+  # engine: auto | winrt (Win11 natural voices) | sapi (old desktop voices)
+  #         | piper (offline neural, cross-platform) | silent (no audio, for tests)
+  engine: auto
+
+  # Preferred narrator voice (substring match, case-insensitive).
+  # Windows 11: install via Settings > Accessibility > Narrator > "Add natural voices"
+  # Good choices: "Ava", "Jenny", "Aria", "Emma", "Andrew", "Guy"
+  voice: Ava
+
+  # speed scale 0..20  (10 = normal). Your requested "speed 12" -> +20% rate.
+  speed: 12
+  # pitch scale -10..10 (0 = normal). Positive = brighter, higher voice.
+  pitch: 2
+
+  # How scale units map to SSML values (tune here, not in code)
+  rate_percent_per_speed_unit: 10     # speed 12  -> rate +20%
+  pitch_percent_per_pitch_unit: 6     # pitch +3  -> pitch +18%
+
+  # Safety fallback: global tempo post-processing via ffmpeg (1.0 = off).
+  # Used automatically if a voice ignores SSML prosody rate.
+  tempo: 1.0
+
+  volume_dbfs_target: -19   # loudness normalization target (LUFS) for chapters
+  mp3_bitrate: 96k          # mono speech; 96k is plenty, files stay small
+
+  piper:
+    voice: en_US-lessac-medium
+    data_dir: models/piper   # voice models are downloaded here automatically
+
+  # --- Voice cloning (XTTS v2) — select with: engine: xtts  or  --engine xtts ---
+  # Record 10-60 s of yourself reading naturally (see README "Use your own
+  # voice"), save as WAV, then set the path here or pass --clone-voice.
+  xtts:
+    clone_voice: ""            # e.g. my_voice.wav  (empty = built-in narrator)
+    speaker: Claribel Dervla   # built-in studio voice when not cloning
+    language: en
+    model: tts_models/multilingual/multi-dataset/xtts_v2
+    data_dir: models/xtts      # ~1.8 GB model downloads here once, then offline
+
+# ---------- Prosody brain ----------
+llm:
+  # provider: auto | ollama | off
+  # auto = use Ollama if reachable, else rule-based engine (still fully local)
+  provider: auto
+  url: http://localhost:11434
+  # model: explicit instruction-following model (e.g. llama3.1:8b).
+  # Never use reasoning models (gpt-oss, qwen3) as they generate verbose thinking tokens.
+  model: "llama3.1:8b"
+  prefer_gpu_models: [llama3.1:8b, qwen2.5:7b-instruct, qwen2.5-coder:7b, mistral:7b]
+  prefer_cpu_models: [llama3.1:8b, qwen2.5:3b, llama3.2:3b, phi3.5:3.8b, phi3:mini, gemma2:2b]
+  paragraphs_per_call: 3      # small models handle few paragraphs best
+  temperature: 0.2
+  timeout_s: 120
+
+# ---------- Narration style ----------
+style: warm        # warm | motivational | storyteller | minimal
+
+# Pauses (milliseconds) inserted by the prosody engine
+pauses:
+  sentence_ms: 380          # after .
+  comma_ms: 150             # emitted only for hard clause splits (; : —)
+  paragraph_ms: 700         # between paragraphs
+  ellipsis_ms: 800          # after ...
+  dialogue_ms: 550          # after a spoken-quote paragraph
+  chapter_gap_ms: 1200      # leading silence of each chapter file
+
+emphasis:
+  # max words marked per sentence (keeps speech natural)
+  max_per_sentence: 2
+  # fallback power-word list for the rule engine (warm narrator)
+  power_words:
+    - never
+    - always
+    - must
+    - dream
+    - believe
+    - hope
+    - heart
+    - truth
+    - love
+    - begin
+    - begin(begins)
+    - courage
+    - light
+    - freedom
+    - home
+    - today
+    - forever
+    - journey
+    - remember
+    - promise
+
+# ---------- Extraction / cleaning ----------
+extract:
+  # whole words that, if they repeat as the first/last line on >40% of PDF
+  # pages, are treated as running headers/footers and stripped
+  strip_running_lines: true
+  min_paragraph_chars: 25      # shorter blocks get merged, not narrated
+  max_sentence_chars: 400      # very long sentences are split at clause breaks
+
+# ---------- Pipeline ----------
+pipeline:
+  workers: 2              # parallel chapter jobs (TTS is the bottleneck)
+  keep_chunks: true       # keep per-paragraph audio for --resume
+  progress_every: 10      # log line every N paragraphs

@@ -1,0 +1,18 @@
+# Core pipeline dependencies (pinned for stability)
+pymupdf>=1.24.0
+ebooklib>=0.18
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+pydub>=0.25.1
+PyYAML>=6.0.0
+requests>=2.31.0
+tqdm>=4.66.0
+
+# Audio I/O and modern Python compatibility
+audioop-lts>=0.2.1; python_version >= "3.13"
+soundfile>=0.12.1
+
+# Optional engines (installed on demand):
+#   pip install coqui-tts       (voice cloning - XTTS v2)
+#   pip install piper-tts       (offline neural voice)
+#   pip install kokoro-onnx     (Kokoro-82M studio voices)
