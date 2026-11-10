@@ -304,13 +304,34 @@ class Pipeline:
             raise RuntimeError("ffmpeg not found in PATH. Install: winget install Gyan.FFmpeg")
 
         ordered = []
+        timeline = []
+        lead_gap_ms = int(pauses.get("chapter_gap_ms", 1200))
+        cur_pos_ms = lead_gap_ms
+
         for para in chapter.paragraphs:
             seg_dict = plan_by_id.get(para.id, {})
             chunk_id = self._chunk_id(para.text, gpros, _shim(seg_dict))
             path = self._chunk_file(chunks_dir, chunk_id)
             if path is None:
                 raise RuntimeError(f"chunk audio missing for {para.id} ({chunk_id})")
-            ordered.append((path, int(seg_dict.get("pause_after_ms", 400))))
+            pause_ms = int(seg_dict.get("pause_after_ms", 400))
+            ordered.append((path, pause_ms))
+
+            chunk_dur_sec = probe_duration(path)
+            start_sec = cur_pos_ms / 1000.0
+            end_sec = start_sec + chunk_dur_sec
+            timeline.append({
+                "para_id": para.id,
+                "start": round(start_sec, 2),
+                "end": round(end_sec, 2),
+            })
+            cur_pos_ms += int(chunk_dur_sec * 1000) + pause_ms
+
+        timeline_path = build_dir / f"timeline_c{chapter.index:02d}.json"
+        try:
+            timeline_path.write_text(json.dumps(timeline, indent=1), encoding="utf-8")
+        except Exception as e:
+            log.warning("Could not write timeline: %s", e)
 
         ch_wav = build_dir / f"chapter_{chapter.index:02d}.wav"
         out_path.parent.mkdir(parents=True, exist_ok=True)

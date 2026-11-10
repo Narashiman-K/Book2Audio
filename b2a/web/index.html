@@ -860,7 +860,12 @@
         const bTitleEl = document.getElementById('currentBookTitle');
         if (bTitleEl) bTitleEl.textContent = `${data.title} · ${data.author}`;
         chapters = data.chapters || [];
-        document.getElementById('totalChapters').textContent = chapters.length;
+        const hasReal = data.has_real_chapters !== false;
+
+        const totalChEl = document.getElementById('totalChapters');
+        if (totalChEl) {
+          totalChEl.textContent = hasReal ? `${Math.max(1, chapters.length - 1)} CH` : 'FULL BOOK';
+        }
 
         const listEl = document.getElementById('chapterList');
         listEl.innerHTML = '';
@@ -869,9 +874,10 @@
           const li = document.createElement('li');
           li.className = `chapter-item ${idx === 0 ? 'active' : ''}`;
           li.onclick = () => selectChapter(ch.index);
+          const isFull = ch.index === 0;
           li.innerHTML = `
             <div style="overflow: hidden; padding-right: 8px;">
-              <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${ch.index}. ${ch.title}</div>
+              <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: ${isFull ? '700' : '500'}; color: ${isFull ? 'var(--primary)' : 'inherit'};">${isFull ? ch.title : `${ch.index}. ${ch.title}`}</div>
               <div class="ch-meta">${ch.words} words • ${ch.duration}</div>
             </div>
             <span style="color: var(--primary); font-size: 11px;">▶</span>
@@ -887,7 +893,7 @@
       }
     }
 
-    // 3. Center Pane Chapter Content Loading
+    // 3. Center Pane Chapter / Full Book Content Loading
     async function selectChapter(chIndex) {
       currentChapterIndex = chIndex;
       const ch = chapters.find(c => c.index === chIndex);
@@ -896,19 +902,16 @@
       // Update active list style
       const items = document.querySelectorAll('.chapter-item');
       items.forEach((item, idx) => {
-        item.classList.toggle('active', idx === (chIndex - 1));
+        const itemCh = chapters[idx];
+        item.classList.toggle('active', itemCh && itemCh.index === chIndex);
       });
 
-      const headingEl = document.getElementById('currentChapterHeading');
-      if (headingEl) {
-        headingEl.textContent = ch.title.toLowerCase().startsWith('chapter')
-          ? ch.title
-          : `Chapter ${String(ch.index).padStart(2, '0')} · ${ch.title}`;
-      }
-      document.getElementById('playerTrackTitle').textContent = `${currentBookTitle} · Ch ${ch.index}`;
+      const isFull = chIndex === 0;
+      const trackTitle = isFull ? `${currentBookTitle} · Full Book` : `${currentBookTitle} · Ch ${ch.index}`;
+      document.getElementById('playerTrackTitle').textContent = trackTitle;
 
       const container = document.getElementById('readerContent');
-      container.innerHTML = '<div style="text-align: center; color: var(--text-muted); margin-top: 80px;">Loading chapter paragraphs...</div>';
+      container.innerHTML = '<div style="text-align: center; color: var(--text-muted); margin-top: 80px;">Loading book text...</div>';
 
       try {
         const resp = await fetch(`/api/chapter_content?path=${encodeURIComponent(currentBookPath)}&chapter=${chIndex}&_t=${Date.now()}`);
@@ -922,30 +925,37 @@
             audio.src = data.audio_url;
             document.getElementById('btnDownloadMp3').href = data.audio_url;
             document.getElementById('btnDownloadMp3').style.display = 'inline-flex';
+            if (data.m4b_url) {
+              const m4bBtn = document.getElementById('btnDownloadM4b');
+              if (m4bBtn) {
+                m4bBtn.href = data.m4b_url;
+                m4bBtn.style.display = 'inline-flex';
+              }
+            }
             const listenTxt = document.getElementById('listenBtnText');
-            if (listenTxt) listenTxt.textContent = 'Play Chapter Audio';
+            if (listenTxt) listenTxt.textContent = isFull ? 'Play Full Audiobook' : 'Play Chapter Audio';
             const pauseCtrl = document.getElementById('btnPauseAudioControl');
             if (pauseCtrl) pauseCtrl.innerHTML = '▶ Play Audio';
-            document.getElementById('playerTrackTitle').textContent = `${currentBookTitle} · Ch ${ch.index}`;
+            document.getElementById('playerTrackTitle').textContent = trackTitle;
           } else {
             audio.src = '';
             document.getElementById('btnDownloadMp3').style.display = 'none';
             const listenTxt = document.getElementById('listenBtnText');
-            if (listenTxt) listenTxt.textContent = 'Synthesize & Play';
+            if (listenTxt) listenTxt.textContent = isFull ? 'Synthesize Full Book (.m4b)' : 'Synthesize & Play';
             const pauseCtrl = document.getElementById('btnPauseAudioControl');
             if (pauseCtrl) pauseCtrl.innerHTML = '▶ Synthesize & Play';
-            document.getElementById('playerTrackTitle').textContent = `${currentBookTitle} · Ch ${ch.index} (Click ▶ to Narrate)`;
+            document.getElementById('playerTrackTitle').textContent = `${trackTitle} (Click ▶ to Narrate)`;
           }
         } else {
           container.innerHTML = `
             <div style="text-align: center; color: var(--text-muted); margin-top: 80px;">
               <h3>No paragraphs found</h3>
-              <p style="font-size: 13px; margin-top: 6px;">${data.error || 'Empty chapter content.'}</p>
+              <p style="font-size: 13px; margin-top: 6px;">${data.error || 'Empty book content.'}</p>
             </div>
           `;
         }
       } catch (e) {
-        container.innerHTML = `<div style="text-align: center; color: #ef4444; margin-top: 80px;">Failed to load chapter text: ${e.message}</div>`;
+        container.innerHTML = `<div style="text-align: center; color: #ef4444; margin-top: 80px;">Failed to load book text: ${e.message}</div>`;
       }
     }
 
@@ -992,16 +1002,93 @@
           pEl.appendChild(sSpan);
         });
 
-        pEl.onclick = () => {
+        pEl.onclick = async () => {
           const start = parseFloat(pEl.dataset.start);
-          if (!isNaN(start) && audio.duration) {
-            audio.currentTime = start;
-            if (audio.paused) audio.play();
+          if (audio.src && audio.duration && !isNaN(audio.duration) && audio.duration > 2) {
+            if (!isNaN(start)) {
+              audio.currentTime = start;
+              if (audio.paused) audio.play();
+            }
+          } else {
+            narrateSingleParagraph(pEl, rawText);
           }
         };
 
         container.appendChild(pEl);
       });
+
+      // Calibrate timings if audio is already active
+      if (audio.duration && !isNaN(audio.duration) && audio.duration > 2) {
+        calibrateParagraphTimings();
+      }
+    }
+
+    // Dynamic Highlighting Synchronization Calibration (Prevents falling behind)
+    function calibrateParagraphTimings() {
+      const dur = audio.duration;
+      if (!dur || isNaN(dur) || dur <= 1) return;
+
+      const blocks = document.querySelectorAll('.paragraph-block');
+      if (blocks.length === 0) return;
+
+      const firstStart = parseFloat(blocks[0].dataset.origStart || blocks[0].dataset.start || 0);
+      const lastBlock = blocks[blocks.length - 1];
+      const lastEnd = parseFloat(lastBlock.dataset.origEnd || lastBlock.dataset.end || 1);
+      const totalEstimated = lastEnd - firstStart;
+
+      if (totalEstimated <= 0) return;
+      const scale = dur / totalEstimated;
+
+      blocks.forEach(block => {
+        if (!block.dataset.origStart) {
+          block.dataset.origStart = block.dataset.start;
+          block.dataset.origEnd = block.dataset.end;
+        }
+        const s = parseFloat(block.dataset.origStart);
+        const e = parseFloat(block.dataset.origEnd);
+        block.dataset.start = (s * scale).toFixed(2);
+        block.dataset.end = (e * scale).toFixed(2);
+      });
+    }
+
+    // Instant Click-to-Read for any paragraph
+    let activeParaReadTimer = null;
+    async function narrateSingleParagraph(pEl, text) {
+      document.querySelectorAll('.paragraph-block').forEach(b => b.classList.remove('active-para'));
+      pEl.classList.add('active-para');
+      pEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      const voice = document.getElementById('voiceSelect').value;
+      const speed = parseFloat(document.getElementById('speedSlider').value);
+      const pitch = parseInt(document.getElementById('pitchSlider').value);
+
+      document.getElementById('playerTrackTitle').textContent = `Reading: "${text.slice(0, 45)}..."`;
+
+      try {
+        const resp = await fetch('/api/read_paragraph', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, voice, speed, pitch })
+        });
+        const data = await resp.json();
+        if (data.ok && data.audioUrl) {
+          audio.src = data.audioUrl + '?t=' + Date.now();
+          audio.playbackRate = speed;
+          audio.play();
+
+          const onEnd = () => {
+            audio.removeEventListener('ended', onEnd);
+            const nextP = pEl.nextElementSibling;
+            if (nextP && nextP.classList.contains('paragraph-block')) {
+              const nextText = nextP.textContent.trim();
+              if (nextText) narrateSingleParagraph(nextP, nextText);
+            }
+          };
+          audio.addEventListener('ended', onEnd);
+        }
+      } catch (e) {
+        console.error('Narrate paragraph error:', e);
+      }
     }
 
     // 4. Live Parameter Modifications (Instant Effect on Ongoing Audio)
@@ -1121,6 +1208,11 @@
       audio.addEventListener('loadedmetadata', () => {
         document.getElementById('totalDuration').textContent = formatTime(audio.duration);
         audio.playbackRate = parseFloat(document.getElementById('speedSlider').value);
+        calibrateParagraphTimings();
+      });
+
+      audio.addEventListener('durationchange', () => {
+        calibrateParagraphTimings();
       });
     }
 
@@ -1296,8 +1388,74 @@
     }
 
     async function synthesizeEntireBook() {
-      alert("Starting full audiobook build. Chapters will synthesize sequentially and package into .m4b with embedded cover art.");
-      synthesizeCurrentChapter();
+      const container = document.getElementById('progressContainer');
+      const bar = document.getElementById('progressBar');
+      const status = document.getElementById('progressStatus');
+      const pct = document.getElementById('progressPercent');
+
+      container.style.display = 'block';
+      bar.style.width = '10%';
+      pct.textContent = '10%';
+      status.textContent = 'Initializing complete audiobook (.m4b) conversion...';
+
+      const voice = document.getElementById('voiceSelect').value;
+      const speed = parseFloat(document.getElementById('speedSlider').value);
+      const pitch = parseInt(document.getElementById('pitchSlider').value);
+
+      try {
+        const resp = await fetch('/api/synthesize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: currentBookPath,
+            chapter: 0,
+            m4b: true,
+            voice,
+            speed,
+            pitch
+          })
+        });
+
+        let timer = setInterval(async () => {
+          try {
+            const pResp = await fetch(`/api/progress?_t=${Date.now()}`);
+            const pData = await pResp.json();
+            bar.style.width = `${pData.percent}%`;
+            pct.textContent = `${pData.percent}%`;
+            status.textContent = pData.message;
+
+            if (!pData.active || pData.percent >= 100) {
+              clearInterval(timer);
+              status.textContent = 'Audiobook (.m4b) conversion complete!';
+              setTimeout(() => { container.style.display = 'none'; }, 1500);
+
+              if (pData.audioUrl) {
+                audio.src = pData.audioUrl + '?t=' + Date.now();
+                audio.playbackRate = speed;
+                audio.play();
+
+                if (pData.m4bUrl) {
+                  const m4bBtn = document.getElementById('btnDownloadM4b');
+                  if (m4bBtn) {
+                    m4bBtn.href = pData.m4bUrl;
+                    m4bBtn.style.display = 'inline-flex';
+                  }
+                }
+                document.getElementById('btnDownloadMp3').href = pData.audioUrl;
+                document.getElementById('btnDownloadMp3').style.display = 'inline-flex';
+
+                const listenTxt = document.getElementById('listenBtnText');
+                if (listenTxt) listenTxt.textContent = 'Pause Audiobook';
+                const pCtrl = document.getElementById('btnPauseAudioControl');
+                if (pCtrl) pCtrl.innerHTML = '⏸ Pause Audio';
+                document.getElementById('playerTrackTitle').textContent = `${currentBookTitle} · Complete Audiobook (.m4b)`;
+              }
+            }
+          } catch (_) {}
+        }, 1200);
+      } catch (e) {
+        status.textContent = `Conversion failed: ${e.message}`;
+      }
     }
   </script>
 </body>

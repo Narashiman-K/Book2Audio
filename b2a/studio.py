@@ -22,10 +22,10 @@ from pathlib import Path
 from typing import Optional
 
 from .config import Config, load_config
-from .extract import extract_book
+from .extract import extract_book, has_identifiable_chapters
 from .models import Book, Chapter, Paragraph, ProsodySegment
 from .tts.base import ChunkJob
-from .pipeline import Pipeline
+from .pipeline import Pipeline, slugify
 
 log = logging.getLogger("b2a.studio")
 
@@ -36,16 +36,19 @@ _PROGRESS_STATE = {
     "message": "Idle",
     "chapter": 1,
     "audioUrl": "",
+    "m4bUrl": "",
 }
 
 
-def _update_progress(percent: int, message: str, active: bool = True, audio_url: str = ""):
+def _update_progress(percent: int, message: str, active: bool = True, audio_url: str = "", m4b_url: str = ""):
     with _PROGRESS_LOCK:
         _PROGRESS_STATE["active"] = active
         _PROGRESS_STATE["percent"] = percent
         _PROGRESS_STATE["message"] = message
         if audio_url:
             _PROGRESS_STATE["audioUrl"] = audio_url
+        if m4b_url:
+            _PROGRESS_STATE["m4bUrl"] = m4b_url
 
 
 def _get_progress() -> dict:
@@ -116,6 +119,8 @@ class StudioHandler(SimpleHTTPRequestHandler):
             return self._handle_synthesize()
         elif path == "/api/upload":
             return self._handle_upload()
+        elif path == "/api/read_paragraph":
+            return self._handle_read_paragraph()
         else:
             self.send_error(HTTPStatus.NOT_FOUND, "Endpoint not found")
 
@@ -241,23 +246,53 @@ class StudioHandler(SimpleHTTPRequestHandler):
         cfg = load_config(self.b2a_dir / "config.yaml")
         try:
             book = extract_book(book_path, cfg)
+            has_real_chapters = has_identifiable_chapters(book.chapters)
+
+            total_paras = sum(len(c.paragraphs) for c in book.chapters)
+            total_words = sum(sum(len(p.text.split()) for p in c.paragraphs) for c in book.chapters)
+            total_mins = max(1, round(total_words / 160))
+            total_dur_str = f"{total_mins} min" if total_mins < 60 else f"{total_mins // 60}h {total_mins % 60}m"
+
             ch_list = []
-            for c in book.chapters:
-                word_count = sum(len(p.text.split()) for p in c.paragraphs)
-                mins = max(1, round(word_count / 160))
+            if not has_real_chapters:
+                # Do not show 150 fake page fragments! Single continuous full book mode
                 ch_list.append({
-                    "index": c.index,
-                    "title": _clean_title(c.title),
-                    "paragraphs": len(c.paragraphs),
-                    "words": word_count,
-                    "duration": f"{mins} min" if mins < 60 else f"{mins // 60}h {mins % 60}m",
+                    "index": 0,
+                    "title": "📖 Entire Book (Full Text)",
+                    "paragraphs": total_paras,
+                    "words": total_words,
+                    "duration": total_dur_str,
                 })
+            else:
+                # Provide Full Book option first, followed by genuine chapters
+                ch_list.append({
+                    "index": 0,
+                    "title": "📖 Entire Book (Full Text)",
+                    "paragraphs": total_paras,
+                    "words": total_words,
+                    "duration": total_dur_str,
+                })
+                for c in book.chapters:
+                    word_count = sum(len(p.text.split()) for p in c.paragraphs)
+                    mins = max(1, round(word_count / 160))
+                    ch_list.append({
+                        "index": c.index,
+                        "title": _clean_title(c.title),
+                        "paragraphs": len(c.paragraphs),
+                        "words": word_count,
+                        "duration": f"{mins} min" if mins < 60 else f"{mins // 60}h {mins % 60}m",
+                    })
+
             self._send_json({
                 "ok": True,
                 "title": _clean_title(book.title),
                 "author": _clean_title(book.author) or "Unknown Author",
                 "filename": book_path.name,
                 "path": str(book_path),
+                "has_real_chapters": has_real_chapters,
+                "total_paragraphs": total_paras,
+                "total_words": total_words,
+                "total_duration": total_dur_str,
                 "chapters": ch_list,
             })
         except Exception as e:
@@ -266,7 +301,7 @@ class StudioHandler(SimpleHTTPRequestHandler):
 
     def _handle_chapter_content(self, query: dict):
         raw_path = query.get("path", [""])[0]
-        chapter_idx = int(query.get("chapter", ["1"])[0])
+        chapter_idx = int(query.get("chapter", ["0"])[0])
 
         book_path = self._resolve_book_path(raw_path)
 
@@ -285,6 +320,71 @@ class StudioHandler(SimpleHTTPRequestHandler):
         cfg = load_config(self.b2a_dir / "config.yaml")
         try:
             book = extract_book(book_path, cfg)
+            has_real = has_identifiable_chapters(book.chapters)
+
+            # FULL BOOK MODE (Either requested chapter_idx == 0 or document has no real chapters)
+            if chapter_idx == 0 or not has_real:
+                all_paragraphs = []
+                cur_sec = 0.5
+                p_counter = 0
+                for c in book.chapters:
+                    for p in c.paragraphs:
+                        words = len(p.text.split())
+                        dur = max(1.5, words / 3.0)
+                        p_start = cur_sec
+                        p_end = cur_sec + dur
+                        cur_sec = p_end + 0.4
+                        all_paragraphs.append({
+                            "id": p.id,
+                            "text": p.text,
+                            "start": round(p_start, 2),
+                            "end": round(p_end, 2),
+                        })
+                        p_counter += 1
+
+                # Look for full synthesized audiobook (.m4b or merged audio)
+                audio_url = ""
+                m4b_url = ""
+                out_root = self.b2a_dir / "output_kokoro"
+                book_slug = slugify(book.title)
+                book_out_dir = out_root / book_slug
+
+                if book_out_dir.exists():
+                    for cand in book_out_dir.glob("*.m4b"):
+                        if cand.is_file():
+                            rel = cand.relative_to(self.workspace_dir)
+                            audio_url = f"/api/audio/{rel.as_posix()}"
+                            m4b_url = audio_url
+                            break
+                    if not audio_url:
+                        for cand in sorted(book_out_dir.glob("*.mp3")):
+                            if cand.is_file():
+                                rel = cand.relative_to(self.workspace_dir)
+                                audio_url = f"/api/audio/{rel.as_posix()}"
+                                break
+
+                if not audio_url and out_root.exists():
+                    for cand in out_root.glob(f"*{book_slug}*.m4b"):
+                        if cand.is_file():
+                            rel = cand.relative_to(self.workspace_dir)
+                            audio_url = f"/api/audio/{rel.as_posix()}"
+                            m4b_url = audio_url
+                            break
+
+                return self._send_json({
+                    "ok": True,
+                    "book_title": _clean_title(book.title),
+                    "chapter_index": 0,
+                    "chapter_title": "📖 Entire Book (Full Text)",
+                    "paragraphs": all_paragraphs,
+                    "total_paragraphs": len(all_paragraphs),
+                    "audio_url": audio_url,
+                    "m4b_url": m4b_url,
+                    "timeline": [],
+                    "is_full_book": True,
+                })
+
+            # CHAPTER-SPECIFIC MODE
             target_ch = None
             for ch in book.chapters:
                 if ch.index == chapter_idx:
@@ -300,7 +400,6 @@ class StudioHandler(SimpleHTTPRequestHandler):
             timeline_file = None
             for candidate_dir in [
                 self.b2a_dir / "output_kokoro" / "_build",
-                self.workspace_dir / "samples",
                 self.b2a_dir / "output_kokoro",
             ]:
                 if candidate_dir.exists():
@@ -339,25 +438,17 @@ class StudioHandler(SimpleHTTPRequestHandler):
                     "end": round(p_end, 2),
                 })
 
-            # Search exclusively for real synthesized audio for this book and chapter
+            # Search exclusively for real synthesized audio for this exact book and chapter
             audio_url = ""
             out_root = self.b2a_dir / "output_kokoro"
             ch_idx_str = f"{target_ch.index:02d}"
+            book_slug = slugify(book.title)
+            book_out_dir = out_root / book_slug
 
-            if out_root.exists():
-                # Check for chapter audio files in book subdirectories
-                for cand in out_root.glob(f"**/*{ch_idx_str}*.mp3"):
+            if book_out_dir.exists():
+                for cand in book_out_dir.glob(f"*{ch_idx_str}*.mp3"):
                     if cand.is_file():
                         rel = cand.relative_to(self.workspace_dir)
-                        audio_url = f"/api/audio/{rel.as_posix()}"
-                        break
-
-            # Check samples folder ONLY if it explicitly matches this book and chapter
-            if not audio_url and (self.workspace_dir / "samples").exists():
-                book_prefix = book_path.stem[:12].replace(" ", "_").replace("-", "_")
-                for s_cand in (self.workspace_dir / "samples").glob(f"*{book_prefix}*Ch{ch_idx_str}*.mp3"):
-                    if s_cand.exists():
-                        rel = s_cand.relative_to(self.workspace_dir)
                         audio_url = f"/api/audio/{rel.as_posix()}"
                         break
 
@@ -472,13 +563,15 @@ class StudioHandler(SimpleHTTPRequestHandler):
         voice = req.get("voice", "af_heart")
         speed = float(req.get("speed", 1.15))
         pitch = int(req.get("pitch", 4))
+        is_m4b = req.get("m4b", False) or chapter_idx == 0 or req.get("all_chapters", False)
 
         book_file = self._resolve_book_path(raw_path)
         if not book_file or not book_file.exists():
             return self._send_json({"ok": False, "error": f"Book file not found: {raw_path}"})
 
         def _worker():
-            _update_progress(10, f"Initializing Kokoro neural engine for {book_file.stem}...")
+            mode_desc = "full audiobook (.m4b)" if is_m4b else f"Chapter {chapter_idx}"
+            _update_progress(10, f"Initializing Kokoro neural engine for {book_file.stem} ({mode_desc})...")
             cfg = load_config(self.b2a_dir / "config.yaml")
             cfg["tts"]["engine"] = "kokoro"
             cfg["tts"]["voice"] = voice
@@ -493,18 +586,38 @@ class StudioHandler(SimpleHTTPRequestHandler):
             out_root = self.b2a_dir / "output_kokoro"
             pipeline = Pipeline(cfg, engine, out_root)
 
-            _update_progress(30, f"Synthesizing Chapter {chapter_idx} with Kokoro/{voice}...")
-            manifest = pipeline.convert(
-                book_file,
-                force=True,
-                m4b=False,
-                chapters=[chapter_idx],
-                progress=lambda msg: _update_progress(60, msg)
-            )
+            _update_progress(25, f"Synthesizing {mode_desc} with Kokoro/{voice}...")
+
+            if is_m4b:
+                manifest = pipeline.convert(
+                    book_file,
+                    force=True,
+                    m4b=True,
+                    chapters=None,
+                    progress=lambda msg: _update_progress(55, msg)
+                )
+            else:
+                manifest = pipeline.convert(
+                    book_file,
+                    force=True,
+                    m4b=False,
+                    chapters=[chapter_idx],
+                    progress=lambda msg: _update_progress(60, msg)
+                )
+
+            audio_url = ""
+            m4b_url = ""
+            m4b_file = manifest.get("m4b_file")
+            if m4b_file and Path(m4b_file).exists():
+                try:
+                    rel = Path(m4b_file).relative_to(self.workspace_dir)
+                    m4b_url = f"/api/audio/{rel.as_posix()}"
+                except Exception:
+                    m4b_url = f"/api/audio/output_kokoro/{Path(m4b_file).name}"
+                audio_url = m4b_url
 
             ch_files = manifest.get("chapters", [])
-            audio_url = ""
-            if ch_files:
+            if not audio_url and ch_files:
                 out_mp3_path = ch_files[0].get("file")
                 if out_mp3_path:
                     try:
@@ -513,10 +626,47 @@ class StudioHandler(SimpleHTTPRequestHandler):
                     except Exception:
                         audio_url = f"/api/audio/output_kokoro/{Path(out_mp3_path).name}"
 
-            _update_progress(100, "Synthesis complete!", active=False, audio_url=audio_url)
+            _update_progress(100, f"{mode_desc.capitalize()} complete!", active=False, audio_url=audio_url, m4b_url=m4b_url)
 
         threading.Thread(target=_worker, daemon=True).start()
         self._send_json({"ok": True, "message": "Synthesis initiated"})
+
+    def _handle_read_paragraph(self):
+        import hashlib
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+        req = json.loads(body.decode("utf-8"))
+
+        text = req.get("text", "").strip()
+        if not text:
+            return self._send_json({"ok": False, "error": "Empty paragraph text"})
+        voice = req.get("voice", "af_heart")
+        speed = float(req.get("speed", 1.15))
+        pitch = int(req.get("pitch", 4))
+
+        cfg = load_config(self.b2a_dir / "config.yaml")
+        cfg["tts"]["engine"] = "kokoro"
+        cfg["tts"]["voice"] = voice
+        cfg["tts"]["kokoro"]["voice"] = voice
+        cfg["tts"]["kokoro"]["speed"] = speed
+        cfg["tts"]["kokoro"]["pitch"] = pitch
+
+        from .tts import create_engine
+        engine = create_engine(cfg, prefer="kokoro")
+
+        p_dir = self.b2a_dir / "audition"
+        p_dir.mkdir(exist_ok=True)
+        h = hashlib.sha256(f"{text}-{voice}-{speed}-{pitch}".encode()).hexdigest()[:12]
+        out_wav = p_dir / f"para_{h}.wav"
+
+        job = ChunkJob(id=f"para_{h}", text=text, ssml=text)
+        results = engine.synthesize_batch([job], p_dir)
+        res = results[0] if results else None
+
+        if res and res.ok and out_wav.exists():
+            self._send_json({"ok": True, "audioUrl": f"/api/audio/audition/{out_wav.name}"})
+        else:
+            self._send_json({"ok": False, "error": (res.error if res else "Paragraph narration failed") or "Paragraph narration failed"})
 
     def _handle_upload(self):
         content_type = self.headers.get("Content-Type", "")

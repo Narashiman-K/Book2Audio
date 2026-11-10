@@ -73,6 +73,23 @@ def _looks_like_heading(text: str) -> bool:
     )
 
 
+def has_identifiable_chapters(chapters: List[Chapter]) -> bool:
+    """Determine if a book has genuine distinct chapters vs pages/micro-fragments."""
+    if not chapters or len(chapters) <= 1:
+        return False
+
+    page_heading_re = re.compile(r"^(?:page|p\.?)\s*\d+$", re.I)
+    page_like_count = sum(1 for c in chapters if page_heading_re.match(c.title.strip()))
+    if page_like_count / len(chapters) > 0.15:
+        return False
+
+    avg_paras = sum(len(c.paragraphs) for c in chapters) / max(len(chapters), 1)
+    if len(chapters) > 20 and avg_paras < 4:
+        return False
+
+    return True
+
+
 # --------------------------------------------------------------------------
 # PDF
 # --------------------------------------------------------------------------
@@ -110,8 +127,9 @@ def extract_pdf(path: Path, cfg) -> Book:
         for pno, text in enumerate(pages_text):
             m = None
             for line in text.splitlines()[:6]:  # headings live near the top
-                if CHAPTER_HEADING_RE.match(line.strip()):
-                    m = line.strip()
+                line_str = line.strip()
+                if not PAGE_LINE_RE.match(line_str) and not FIG_LINE_RE.match(line_str) and CHAPTER_HEADING_RE.match(line_str):
+                    m = line_str
                     break
             if m:
                 if current_title is not None:
