@@ -1,6 +1,7 @@
 """book2audio Local Web Studio UI server and speed-reader API."""
 from __future__ import annotations
 
+import email.policy
 import io
 import json
 import logging
@@ -14,6 +15,7 @@ import threading
 import time
 import urllib.parse
 import webbrowser
+from email.parser import BytesParser
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -51,6 +53,13 @@ def _get_progress() -> dict:
         return dict(_PROGRESS_STATE)
 
 
+def _clean_title(title: str) -> str:
+    """Strip HTML tags and excess whitespace from chapter headings."""
+    clean = re.sub(r"<[^>]+>", "", title)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    return clean or "Chapter"
+
+
 class StudioHandler(SimpleHTTPRequestHandler):
     """Custom HTTP request handler serving Studio Single Page App and REST APIs."""
 
@@ -61,7 +70,6 @@ class StudioHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, **kwargs)
 
     def log_message(self, format, *args):
-        # Keep studio server output clean unless error
         if args and str(args[1]).startswith(("4", "5")):
             log.warning("%s - - [%s] %s", self.address_string(), self.log_date_time_string(), format % args)
         else:
@@ -80,6 +88,8 @@ class StudioHandler(SimpleHTTPRequestHandler):
             return self._handle_voices()
         elif path == "/api/books":
             return self._handle_books()
+        elif path == "/api/book_details":
+            return self._handle_book_details(query)
         elif path == "/api/chapter_content":
             return self._handle_chapter_content(query)
         elif path == "/api/progress":
@@ -151,41 +161,116 @@ class StudioHandler(SimpleHTTPRequestHandler):
         self._send_json({"ok": True, "voices": voices})
 
     def _handle_books(self):
+        """Scan workspace, Books/ folder, and uploads/ for candidate book documents."""
         books = []
-        for root in [self.workspace_dir, self.b2a_dir]:
-            for p in root.glob("*.*"):
-                if p.suffix.lower() in (".epub", ".pdf", ".md", ".txt"):
+        seen_paths = set()
+
+        search_dirs = [
+            self.workspace_dir / "Books",
+            self.b2a_dir / "uploads",
+            self.workspace_dir,
+            self.b2a_dir,
+        ]
+
+        skip_names = {"requirements.txt", "requirements-dev.txt", "PLAN.md", "README.md", "CLAUDE.md", "AGENTS.md"}
+
+        for sdir in search_dirs:
+            if not sdir.exists():
+                continue
+            for p in sorted(sdir.glob("*.*")):
+                if p.name in skip_names or p.name.startswith("."):
+                    continue
+                if p.suffix.lower() in (".epub", ".pdf", ".md", ".markdown", ".txt"):
+                    resolved = str(p.resolve())
+                    if resolved in seen_paths:
+                        continue
+                    seen_paths.add(resolved)
+
+                    # Generate clean label
+                    label = p.stem.replace("_", " ").replace("-", " ")
+                    if len(label) > 60:
+                        label = label[:57] + "..."
+
                     books.append({
                         "filename": p.name,
+                        "label": f"{label} ({p.suffix.upper()})",
                         "path": str(p),
                         "size_mb": round(p.stat().st_size / (1024 * 1024), 2),
                     })
+
         self._send_json({"ok": True, "books": books})
 
-    def _handle_chapter_content(self, query: dict):
-        book_key = query.get("book", ["Naval_Ravikant"])[0]
-        chapter_idx = int(query.get("chapter", ["1"])[0])
+    def _resolve_book_path(self, raw_path: str) -> Optional[Path]:
+        if not raw_path:
+            return None
+        p = Path(raw_path)
+        if p.is_file():
+            return p
+        # Check relative to workspace or b2a
+        for base in [self.workspace_dir / "Books", self.b2a_dir / "uploads", self.workspace_dir, self.b2a_dir]:
+            cand = base / raw_path
+            if cand.is_file():
+                return cand
+            # Try by filename match
+            for found in base.glob(f"*{raw_path}*"):
+                if found.is_file():
+                    return found
+        return None
+
+    def _handle_book_details(self, query: dict):
+        raw_path = query.get("path", [""])[0]
+        book_path = self._resolve_book_path(raw_path)
+
+        if not book_path or not book_path.exists():
+            return self._send_json({"ok": False, "error": f"Book not found: {raw_path}"})
 
         cfg = load_config(self.b2a_dir / "config.yaml")
-        book_file = None
+        try:
+            book = extract_book(book_path, cfg)
+            ch_list = []
+            for c in book.chapters:
+                word_count = sum(len(p.text.split()) for p in c.paragraphs)
+                mins = max(1, round(word_count / 160))
+                ch_list.append({
+                    "index": c.index,
+                    "title": _clean_title(c.title),
+                    "paragraphs": len(c.paragraphs),
+                    "words": word_count,
+                    "duration": f"{mins} min" if mins < 60 else f"{mins // 60}h {mins % 60}m",
+                })
+            self._send_json({
+                "ok": True,
+                "title": _clean_title(book.title),
+                "author": _clean_title(book.author) or "Unknown Author",
+                "filename": book_path.name,
+                "path": str(book_path),
+                "chapters": ch_list,
+            })
+        except Exception as e:
+            log.exception("Error extracting book details: %s", e)
+            self._send_json({"ok": False, "error": str(e)})
 
-        if "Naval" in book_key:
-            for p in [self.workspace_dir / "The-Almanack-of-Naval-Ravikant.md",
-                      self.workspace_dir / "The-Almanack-of-Naval-Ravikant.epub"]:
-                if p.exists():
-                    book_file = p
-                    break
-        elif "Assert" in book_key:
-            for p in [self.workspace_dir / "Assertiveness Training Mastering Assertive Communication.md"]:
-                if p.exists():
-                    book_file = p
-                    break
+    def _handle_chapter_content(self, query: dict):
+        raw_path = query.get("path", [""])[0]
+        chapter_idx = int(query.get("chapter", ["1"])[0])
 
-        if not book_file or not book_file.exists():
+        book_path = self._resolve_book_path(raw_path)
+
+        # Fallback to first available book in Books/ if path is empty or not found
+        if not book_path or not book_path.exists():
+            for cand_dir in [self.workspace_dir / "Books", self.b2a_dir / "uploads"]:
+                if cand_dir.exists():
+                    first_file = next((f for f in cand_dir.glob("*.md") if f.is_file()), None)
+                    if first_file:
+                        book_path = first_file
+                        break
+
+        if not book_path or not book_path.exists():
             return self._send_json({"ok": False, "error": "Book file not found"})
 
+        cfg = load_config(self.b2a_dir / "config.yaml")
         try:
-            book = extract_book(book_file, cfg)
+            book = extract_book(book_path, cfg)
             target_ch = None
             for ch in book.chapters:
                 if ch.index == chapter_idx:
@@ -197,7 +282,7 @@ class StudioHandler(SimpleHTTPRequestHandler):
             if not target_ch:
                 return self._send_json({"ok": False, "error": "Chapter not found"})
 
-            # Check if there is a generated timeline for word/sentence speed-reading sync
+            # Check if there is a generated timeline for synchronized speed-reading
             timeline_file = None
             for candidate_dir in [
                 self.b2a_dir / "output_kokoro" / "_build",
@@ -217,7 +302,6 @@ class StudioHandler(SimpleHTTPRequestHandler):
                 except Exception:
                     pass
 
-            # Estimate timestamps if timeline not yet generated
             timeline_by_para = {t.get("para_id"): t for t in timeline_data}
             paragraphs = []
             current_sec = 0.5
@@ -241,12 +325,26 @@ class StudioHandler(SimpleHTTPRequestHandler):
                     "end": round(p_end, 2),
                 })
 
+            # Check for existing audio file for this chapter in samples/ or output_kokoro/
+            audio_url = ""
+            for s_cand in [
+                self.workspace_dir / "samples" / f"Naval_Ravikant_Ch{target_ch.index:02d}_Studio_Audio.mp3",
+                self.workspace_dir / "samples" / f"Assertiveness_Training_Ch{target_ch.index:02d}_Studio_Audio.mp3",
+                self.workspace_dir / "samples" / "Step1_Studio_Web_UI_Review_Audio.mp3",
+            ]:
+                if s_cand.exists():
+                    rel = s_cand.relative_to(self.workspace_dir)
+                    audio_url = f"/api/audio/{rel.as_posix()}"
+                    break
+
             res = {
                 "ok": True,
+                "book_title": _clean_title(book.title),
                 "chapter_index": target_ch.index,
-                "chapter_title": target_ch.title,
+                "chapter_title": _clean_title(target_ch.title),
                 "paragraphs": paragraphs,
                 "total_paragraphs": len(paragraphs),
+                "audio_url": audio_url,
                 "timeline": timeline_data,
             }
             return self._send_json(res)
@@ -258,34 +356,19 @@ class StudioHandler(SimpleHTTPRequestHandler):
         self._send_json(_get_progress())
 
     def _handle_audio_stream(self, relative_path: str):
-        # Resolve target audio file
         target_path = None
         decoded = urllib.parse.unquote(relative_path)
 
-        if decoded == "sample_naval":
-            cand = self.workspace_dir / "samples" / "Naval_Ravikant_Ch01_Studio_Audio.mp3"
-            if cand.exists():
-                target_path = cand
-        elif decoded == "sample_naval_m4b":
-            cand = self.workspace_dir / "samples" / "The_Almanack_of_Naval_Ravikant_Audiobook.m4b"
-            if cand.exists():
-                target_path = cand
-        elif decoded == "sample_assertive":
-            cand = self.workspace_dir / "samples" / "Assertiveness_Training_Ch01_Studio_Audio.mp3"
-            if cand.exists():
-                target_path = cand
-        else:
-            for base in [self.workspace_dir, self.b2a_dir]:
-                c = (base / decoded).resolve()
-                if c.exists() and c.is_file():
-                    target_path = c
-                    break
+        for base in [self.workspace_dir, self.b2a_dir]:
+            c = (base / decoded).resolve()
+            if c.exists() and c.is_file():
+                target_path = c
+                break
 
         if not target_path or not target_path.exists():
             self.send_error(HTTPStatus.NOT_FOUND, "Audio file not found")
             return
 
-        # Handle HTTP Range Requests for browser seeking/scrubbing
         file_size = target_path.stat().st_size
         range_header = self.headers.get("Range")
 
@@ -360,14 +443,18 @@ class StudioHandler(SimpleHTTPRequestHandler):
         body = self.rfile.read(length)
         req = json.loads(body.decode("utf-8"))
 
-        book_key = req.get("book", "Naval_Ravikant")
+        raw_path = req.get("path", "")
         chapter_idx = int(req.get("chapter", 1))
         voice = req.get("voice", "af_heart")
         speed = float(req.get("speed", 1.15))
         pitch = int(req.get("pitch", 4))
 
+        book_file = self._resolve_book_path(raw_path)
+        if not book_file or not book_file.exists():
+            return self._send_json({"ok": False, "error": f"Book file not found: {raw_path}"})
+
         def _worker():
-            _update_progress(10, "Initializing Kokoro neural engine...")
+            _update_progress(10, f"Initializing Kokoro neural engine for {book_file.stem}...")
             cfg = load_config(self.b2a_dir / "config.yaml")
             cfg["tts"]["engine"] = "kokoro"
             cfg["tts"]["voice"] = voice
@@ -376,18 +463,8 @@ class StudioHandler(SimpleHTTPRequestHandler):
             cfg["tts"]["kokoro"]["pitch"] = pitch
             cfg["tts"]["mp3_bitrate"] = "320k"
 
-            book_file = None
-            if "Naval" in book_key:
-                book_file = self.workspace_dir / "The-Almanack-of-Naval-Ravikant.md"
-            elif "Assert" in book_key:
-                book_file = self.workspace_dir / "Assertiveness Training Mastering Assertive Communication.md"
-
-            if not book_file or not book_file.exists():
-                _update_progress(0, "Error: Book source file not found", active=False)
-                return
-
             from .tts import create_engine
-            engine = create_engine(cfg, "kokoro", voice=voice)
+            engine = create_engine(cfg, prefer="kokoro")
             out_root = self.b2a_dir / "output_kokoro"
             pipeline = Pipeline(cfg, engine, out_root)
 
@@ -405,8 +482,11 @@ class StudioHandler(SimpleHTTPRequestHandler):
             if ch_files:
                 out_mp3_path = ch_files[0].get("file")
                 if out_mp3_path:
-                    rel = Path(out_mp3_path).relative_to(self.workspace_dir)
-                    audio_url = f"/api/audio/{rel.as_posix()}"
+                    try:
+                        rel = Path(out_mp3_path).relative_to(self.workspace_dir)
+                        audio_url = f"/api/audio/{rel.as_posix()}"
+                    except Exception:
+                        audio_url = f"/api/audio/output_kokoro/{Path(out_mp3_path).name}"
 
             _update_progress(100, "Synthesis complete!", active=False, audio_url=audio_url)
 
@@ -421,10 +501,6 @@ class StudioHandler(SimpleHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length)
 
-        # Parse multipart form data using standard library email.parser (Python 3.14+ PEP 594 compliant)
-        import email.policy
-        from email.parser import BytesParser
-
         full_payload = f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8") + body
         msg = BytesParser(policy=email.policy.default).parsebytes(full_payload)
 
@@ -433,10 +509,12 @@ class StudioHandler(SimpleHTTPRequestHandler):
 
         if msg.is_multipart():
             for part in msg.iter_parts():
-                if part.get_param("name", header="content-disposition") == "book_file" or part.get_filename():
+                cd = str(part.get("content-disposition", ""))
+                fn = part.get_filename()
+                if "book_file" in cd or fn:
                     file_bytes = part.get_payload(decode=True)
-                    if part.get_filename():
-                        orig_filename = part.get_filename()
+                    if fn:
+                        orig_filename = fn
                     break
 
         if not file_bytes:
@@ -450,13 +528,28 @@ class StudioHandler(SimpleHTTPRequestHandler):
         cfg = load_config(self.b2a_dir / "config.yaml")
         try:
             book = extract_book(uploaded_path, cfg)
-            ch_list = [{"index": c.index, "title": c.title, "paragraphs": len(c.paragraphs)} for c in book.chapters]
+            ch_list = []
+            for c in book.chapters:
+                word_count = sum(len(p.text.split()) for p in c.paragraphs)
+                mins = max(1, round(word_count / 160))
+                ch_list.append({
+                    "index": c.index,
+                    "title": _clean_title(c.title),
+                    "paragraphs": len(c.paragraphs),
+                    "words": word_count,
+                    "duration": f"{mins} min",
+                })
+
             self._send_json({
                 "ok": True,
-                "title": book.title,
+                "title": _clean_title(book.title),
+                "author": _clean_title(book.author),
+                "filename": orig_filename,
+                "path": str(uploaded_path),
                 "chapters": ch_list,
             })
         except Exception as e:
+            log.exception("Error extracting uploaded book: %s", e)
             self._send_json({"ok": False, "error": str(e)})
 
     def _send_json(self, payload: dict, status: int = HTTPStatus.OK):
@@ -470,7 +563,6 @@ class StudioHandler(SimpleHTTPRequestHandler):
 
 def run_studio(host: str = "127.0.0.1", port: int = 8080, open_browser: bool = True):
     """Run the local Book2Audio Studio web server."""
-    # Find next open port if default is occupied
     actual_port = port
     for p in range(port, port + 20):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
