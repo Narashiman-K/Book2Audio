@@ -69,6 +69,13 @@ class StudioHandler(SimpleHTTPRequestHandler):
         self.web_dir = Path(__file__).resolve().parent / "web"
         super().__init__(*args, **kwargs)
 
+    @property
+    def books_library_dir(self) -> Path:
+        """Authoritative Books-Library folder in the workspace root."""
+        lib = self.workspace_dir / "Books-Library"
+        lib.mkdir(parents=True, exist_ok=True)
+        return lib
+
     def log_message(self, format, *args):
         if args and str(args[1]).startswith(("4", "5")):
             log.warning("%s - - [%s] %s", self.address_string(), self.log_date_time_string(), format % args)
@@ -161,15 +168,13 @@ class StudioHandler(SimpleHTTPRequestHandler):
         self._send_json({"ok": True, "voices": voices})
 
     def _handle_books(self):
-        """Scan workspace, Books/ folder, and uploads/ for candidate book documents."""
+        """Scan Books-Library for candidate book documents."""
         books = []
         seen_paths = set()
 
         search_dirs = [
-            self.workspace_dir / "Books",
-            self.b2a_dir / "uploads",
-            self.workspace_dir,
-            self.b2a_dir,
+            self.books_library_dir,
+            self.b2a_dir / "Books-Library",
         ]
 
         skip_names = {"requirements.txt", "requirements-dev.txt", "PLAN.md", "README.md", "CLAUDE.md", "AGENTS.md"}
@@ -206,13 +211,19 @@ class StudioHandler(SimpleHTTPRequestHandler):
         p = Path(raw_path)
         if p.is_file():
             return p
-        # Check relative to workspace or b2a
-        for base in [self.workspace_dir / "Books", self.b2a_dir / "uploads", self.workspace_dir, self.b2a_dir]:
+        # Check in Books-Library first
+        for base in [self.books_library_dir, self.b2a_dir / "Books-Library", self.workspace_dir, self.b2a_dir]:
+            if not base.exists():
+                continue
             cand = base / raw_path
             if cand.is_file():
                 return cand
-            # Try by filename match
-            for found in base.glob(f"*{raw_path}*"):
+            # Check by filename inside base
+            cand_name = base / p.name
+            if cand_name.is_file():
+                return cand_name
+            # Try by pattern match
+            for found in base.glob(f"*{p.name}*"):
                 if found.is_file():
                     return found
         return None
@@ -256,11 +267,11 @@ class StudioHandler(SimpleHTTPRequestHandler):
 
         book_path = self._resolve_book_path(raw_path)
 
-        # Fallback to first available book in Books/ if path is empty or not found
+        # Fallback to first available book in Books-Library if path is empty or not found
         if not book_path or not book_path.exists():
-            for cand_dir in [self.workspace_dir / "Books", self.b2a_dir / "uploads"]:
+            for cand_dir in [self.books_library_dir, self.b2a_dir / "Books-Library"]:
                 if cand_dir.exists():
-                    first_file = next((f for f in cand_dir.glob("*.md") if f.is_file()), None)
+                    first_file = next((f for f in cand_dir.glob("*.*") if f.suffix.lower() in (".epub", ".pdf", ".md", ".markdown", ".txt")), None)
                     if first_file:
                         book_path = first_file
                         break
@@ -520,9 +531,7 @@ class StudioHandler(SimpleHTTPRequestHandler):
         if not file_bytes:
             return self._send_json({"ok": False, "error": "No file uploaded"})
 
-        upload_dir = self.b2a_dir / "uploads"
-        upload_dir.mkdir(exist_ok=True)
-        uploaded_path = upload_dir / orig_filename
+        uploaded_path = self.books_library_dir / orig_filename
         uploaded_path.write_bytes(file_bytes)
 
         cfg = load_config(self.b2a_dir / "config.yaml")

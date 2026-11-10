@@ -462,7 +462,7 @@
     <!-- Column 1: Library & Table of Contents -->
     <div class="panel">
       <div class="panel-header">
-        <span>Book Library</span>
+        <span>Books-Library</span>
         <span id="bookCount">0 Books</span>
       </div>
       <div class="panel-body">
@@ -583,16 +583,7 @@
           </select>
         </div>
 
-        <!-- Quick Audition Card -->
-        <div class="control-card">
-          <label class="select-label">Quick Voice Audition</label>
-          <textarea id="auditionText">Happiness is not something you inherit or choose. It's a highly personal skill that can be learned.</textarea>
-          <button class="btn-secondary" onclick="playAudition()">
-            <span>▶</span> Audition Current Voice & Settings
-          </button>
-        </div>
-
-        <!-- Production Generation Card -->
+        <!-- Production Generation Card (Synthesize Section) -->
         <div class="control-card">
           <button class="btn-primary" id="btnSynthesizeChapter" onclick="synthesizeCurrentChapter()">
             <span>🎙️</span> Synthesize Chapter Audio
@@ -611,6 +602,15 @@
               <span id="progressPercent">0%</span>
             </div>
           </div>
+        </div>
+
+        <!-- Quick Voice Audition Card (Moved to Last) -->
+        <div class="control-card">
+          <label class="select-label">Quick Voice Audition</label>
+          <textarea id="auditionText">Happiness is not something you inherit or choose. It's a highly personal skill that can be learned.</textarea>
+          <button class="btn-secondary" onclick="playAudition()">
+            <span>▶</span> Audition Current Voice & Settings
+          </button>
         </div>
 
       </div>
