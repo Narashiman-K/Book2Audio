@@ -63,6 +63,7 @@ class Pipeline:
         self.cfg = cfg
         self.engine = engine
         self.out_root = Path(out_root)
+        self.force: bool = False
         self.prosody = self._make_prosody()
 
     def _make_prosody(self):
@@ -115,6 +116,7 @@ class Pipeline:
         say=None,
     ) -> dict:
         say = say or (lambda m: None)
+        self.force = force
         out_book_dir = self.out_root / slugify(book.title)
         build_dir = self.out_root / "_build" / f"{slugify(book.title)}-{settings_hash(self.cfg)}"
         build_dir.mkdir(parents=True, exist_ok=True)
@@ -358,7 +360,8 @@ def _shim(seg_dict: dict):
 
 
 def _safe(title: str) -> str:
-    return re.sub(r'[<>:"/\\|?*]', "", title).strip() or "Chapter"
+    clean = re.sub(r"<[^>]+>", "", title)
+    return re.sub(r'[<>:"/\\|?*]', "", clean).strip() or "Chapter"
 
 
 def _save_state(path: Path, data: dict) -> None:

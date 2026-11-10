@@ -230,10 +230,19 @@
       box-shadow: 0 0 0 1px var(--highlight-border);
       color: #fff;
     }
+    .word-span {
+      display: inline-block;
+      padding: 1px 3px;
+      border-radius: 4px;
+      transition: background 0.08s ease, color 0.08s ease, transform 0.08s ease;
+    }
     .word-span.active-word {
-      color: var(--active-word);
-      font-weight: 700;
-      text-decoration: underline;
+      background: #facc15;
+      color: #0b0f19 !important;
+      font-weight: 800;
+      border-radius: 4px;
+      box-shadow: 0 0 12px rgba(250, 204, 21, 0.7);
+      transform: scale(1.08);
     }
 
     /* Right Panel: Studio Controls */
@@ -495,6 +504,9 @@
           <p id="currentBookTitle">No book loaded</p>
         </div>
         <div class="reader-controls">
+          <button class="btn-tool active" id="btnListenChapter" onclick="onListenChapterClicked()" title="Play or Synthesize Chapter Audio" style="background: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #34d399; font-weight: 700;">
+            🎙️ <span id="listenBtnText">Synthesize & Play</span>
+          </button>
           <button class="btn-tool active" id="btnAutoScroll" onclick="toggleAutoScroll()" title="Auto-scroll to current speaking text">
             📜 Auto-Scroll: <span id="autoScrollStatus">ON</span>
           </button>
@@ -857,6 +869,13 @@
             audio.src = data.audio_url;
             document.getElementById('btnDownloadMp3').href = data.audio_url;
             document.getElementById('btnDownloadMp3').style.display = 'inline-flex';
+            document.getElementById('listenBtnText').textContent = 'Play Chapter Audio';
+            document.getElementById('playerTrackTitle').textContent = `${currentBookTitle} · Ch ${ch.index}`;
+          } else {
+            audio.src = '';
+            document.getElementById('btnDownloadMp3').style.display = 'none';
+            document.getElementById('listenBtnText').textContent = 'Synthesize & Play';
+            document.getElementById('playerTrackTitle').textContent = `${currentBookTitle} · Ch ${ch.index} (Click ▶ to Narrate)`;
           }
         } else {
           container.innerHTML = `
@@ -1029,14 +1048,12 @@
 
     function highlightActiveReading(currentTime) {
       const paraBlocks = document.querySelectorAll('.paragraph-block');
-      let currentActivePara = null;
 
       paraBlocks.forEach((block) => {
         const start = parseFloat(block.dataset.start);
         const end = parseFloat(block.dataset.end);
 
         if (currentTime >= start && currentTime < end) {
-          currentActivePara = block;
           if (!block.classList.contains('active-para')) {
             paraBlocks.forEach(b => b.classList.remove('active-para'));
             block.classList.add('active-para');
@@ -1046,35 +1063,65 @@
             }
           }
 
-          // Active sentence inside paragraph
+          // Active sentence & real-time word highlighting inside paragraph
           const sentences = block.querySelectorAll('.sentence-span');
           if (sentences.length > 0) {
             const paraDuration = Math.max(0.1, end - start);
-            const progress = (currentTime - start) / paraDuration;
-            const activeSentenceIndex = Math.min(sentences.length - 1, Math.floor(progress * sentences.length));
+            const paraProgress = Math.max(0, Math.min(1, (currentTime - start) / paraDuration));
+            const activeSentenceIndex = Math.min(sentences.length - 1, Math.floor(paraProgress * sentences.length));
 
-            sentences.forEach((s, idx) => {
-              if (idx === activeSentenceIndex) {
+            sentences.forEach((s, sIdx) => {
+              if (sIdx === activeSentenceIndex) {
                 s.classList.add('active-sentence');
+
+                // Active Word Inside Current Sentence
+                const words = s.querySelectorAll('.word-span');
+                if (words.length > 0) {
+                  const sentDuration = paraDuration / sentences.length;
+                  const sentStart = start + (sIdx * sentDuration);
+                  const sentProgress = Math.max(0, Math.min(1, (currentTime - sentStart) / sentDuration));
+                  const activeWordIndex = Math.min(words.length - 1, Math.floor(sentProgress * words.length));
+
+                  words.forEach((w, wIdx) => {
+                    if (wIdx === activeWordIndex) {
+                      w.classList.add('active-word');
+                    } else {
+                      w.classList.remove('active-word');
+                    }
+                  });
+                }
               } else {
                 s.classList.remove('active-sentence');
+                s.querySelectorAll('.word-span').forEach(w => w.classList.remove('active-word'));
               }
             });
           }
+        } else {
+          block.querySelectorAll('.active-sentence').forEach(s => s.classList.remove('active-sentence'));
+          block.querySelectorAll('.active-word').forEach(w => w.classList.remove('active-word'));
         }
       });
     }
 
+    function onListenChapterClicked() {
+      if (audio.src) {
+        togglePlayPause();
+      } else {
+        synthesizeCurrentChapter();
+      }
+    }
+
     function togglePlayPause() {
       if (!audio.src) {
-        // If no audio loaded, trigger audition or synthesis
-        playAudition();
+        synthesizeCurrentChapter();
         return;
       }
       if (audio.paused) {
         audio.play();
+        document.getElementById('listenBtnText').textContent = 'Pause Audio';
       } else {
         audio.pause();
+        document.getElementById('listenBtnText').textContent = 'Resume Audio';
       }
     }
 
@@ -1157,6 +1204,9 @@
                 audio.playbackRate = speed;
                 audio.play();
                 document.getElementById('btnDownloadMp3').href = pData.audioUrl;
+                document.getElementById('btnDownloadMp3').style.display = 'inline-flex';
+                document.getElementById('listenBtnText').textContent = 'Pause Audio';
+                document.getElementById('playerTrackTitle').textContent = `${currentBookTitle} · Ch ${currentChapterIndex}`;
               }
             }
           } catch (_) {}

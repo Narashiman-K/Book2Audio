@@ -336,17 +336,27 @@ class StudioHandler(SimpleHTTPRequestHandler):
                     "end": round(p_end, 2),
                 })
 
-            # Check for existing audio file for this chapter in samples/ or output_kokoro/
+            # Search exclusively for real synthesized audio for this book and chapter
             audio_url = ""
-            for s_cand in [
-                self.workspace_dir / "samples" / f"Naval_Ravikant_Ch{target_ch.index:02d}_Studio_Audio.mp3",
-                self.workspace_dir / "samples" / f"Assertiveness_Training_Ch{target_ch.index:02d}_Studio_Audio.mp3",
-                self.workspace_dir / "samples" / "Step1_Studio_Web_UI_Review_Audio.mp3",
-            ]:
-                if s_cand.exists():
-                    rel = s_cand.relative_to(self.workspace_dir)
-                    audio_url = f"/api/audio/{rel.as_posix()}"
-                    break
+            out_root = self.b2a_dir / "output_kokoro"
+            ch_idx_str = f"{target_ch.index:02d}"
+
+            if out_root.exists():
+                # Check for chapter audio files in book subdirectories
+                for cand in out_root.glob(f"**/*{ch_idx_str}*.mp3"):
+                    if cand.is_file():
+                        rel = cand.relative_to(self.workspace_dir)
+                        audio_url = f"/api/audio/{rel.as_posix()}"
+                        break
+
+            # Check samples folder ONLY if it explicitly matches this book and chapter
+            if not audio_url and (self.workspace_dir / "samples").exists():
+                book_prefix = book_path.stem[:12].replace(" ", "_").replace("-", "_")
+                for s_cand in (self.workspace_dir / "samples").glob(f"*{book_prefix}*Ch{ch_idx_str}*.mp3"):
+                    if s_cand.exists():
+                        rel = s_cand.relative_to(self.workspace_dir)
+                        audio_url = f"/api/audio/{rel.as_posix()}"
+                        break
 
             res = {
                 "ok": True,
@@ -473,6 +483,7 @@ class StudioHandler(SimpleHTTPRequestHandler):
             cfg["tts"]["kokoro"]["speed"] = speed
             cfg["tts"]["kokoro"]["pitch"] = pitch
             cfg["tts"]["mp3_bitrate"] = "320k"
+            cfg["llm"]["provider"] = "off"
 
             from .tts import create_engine
             engine = create_engine(cfg, prefer="kokoro")
