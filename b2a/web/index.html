@@ -552,10 +552,21 @@
           </div>
         </div>
 
-        <label class="select-label" style="margin-top: 10px;">Chapters (<span id="totalChapters">0</span>)</label>
-        <ul class="chapter-list" id="chapterList">
-          <li style="color: var(--text-muted); font-size: 12px; padding: 8px;">Select a book above.</li>
-        </ul>
+        <!-- Book Information & M4B Status Card -->
+        <div class="control-card" id="bookInfoCard" style="margin-top: 14px; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 700;">AUDIOBOOK STATUS</span>
+            <span class="badge" id="m4bStatusBadge" style="font-size: 10px; padding: 2px 8px; background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.3);">Select book</span>
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted); display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+            <div>Words: <strong id="bookInfoWords" style="color: var(--text);">0</strong></div>
+            <div>Duration: <strong id="bookInfoDuration" style="color: var(--text);">0 min</strong></div>
+          </div>
+          <button id="btnResumePosition" onclick="resumeSavedPlayback()" style="display: none; width: 100%; background: var(--bg-hover); border: 1px solid var(--border); color: var(--accent); padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;">
+            ↺ Resume where you left off (<span id="resumeTimeLabel">00:00</span>)
+          </button>
+        </div>
+
       </div>
     </div>
 
@@ -564,8 +575,8 @@
       <div class="reader-content font-serif" id="readerContent">
         <div style="text-align: center; color: var(--text-muted); margin-top: 100px;">
           <div style="font-size: 32px; margin-bottom: 12px;">📖</div>
-          <h3>Select a book or chapter</h3>
-          <p style="font-size: 13px; margin-top: 6px;">The full book text will display here with synchronized sentence and word highlighting as audio plays.</p>
+          <h3>Select a book above</h3>
+          <p style="font-size: 13px; margin-top: 6px;">The full book text will display here with synchronized sentence and word highlighting as the audiobook plays.</p>
         </div>
       </div>
     </div>
@@ -620,14 +631,8 @@
           </div>
           <input type="range" id="pitchSlider" min="0" max="10" step="1" value="4" oninput="onPitchSliderChanged(this.value)">
 
-          <!-- Live Auto-Audition Toggle -->
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px; margin-bottom: 12px; font-size: 11px; color: var(--text-muted);">
-            <span>⚡ Instant preview on slider release</span>
-            <input type="checkbox" id="autoPreviewCheck" checked style="width: auto; margin-bottom: 0;">
-          </div>
-
           <!-- Bitrate Selector -->
-          <div class="slider-row">
+          <div class="slider-row" style="margin-top: 10px;">
             <span class="select-label" style="margin-bottom:0;">Master Bitrate</span>
             <span class="slider-val" style="color: var(--accent);">320 kbps CBR</span>
           </div>
@@ -638,13 +643,10 @@
           </select>
         </div>
 
-        <!-- Production Generation Card (Synthesize Section) -->
+        <!-- Production Generation Card (Audiobook .m4b Section) -->
         <div class="control-card">
-          <button class="btn-primary" id="btnSynthesizeChapter" onclick="synthesizeCurrentChapter()">
-            <span>🎙️</span> Synthesize Chapter Audio
-          </button>
-          <button class="btn-secondary" id="btnSynthesizeBook" onclick="synthesizeEntireBook()" style="margin-top: 10px;">
-            <span>📦</span> Build Entire Audiobook (.m4b)
+          <button class="btn-primary" id="btnSynthesizeBook" onclick="synthesizeEntireBook(true)">
+            <span>📦</span> Build / Re-render Full Audiobook (.m4b)
           </button>
 
           <!-- Progress -->
@@ -657,15 +659,6 @@
               <span id="progressPercent">0%</span>
             </div>
           </div>
-        </div>
-
-        <!-- Quick Voice Audition Card (Moved to Last) -->
-        <div class="control-card">
-          <label class="select-label">Quick Voice Audition</label>
-          <textarea id="auditionText">Happiness is not something you inherit or choose. It's a highly personal skill that can be learned.</textarea>
-          <button class="btn-secondary" onclick="playAudition()">
-            <span>▶</span> Audition Current Voice & Settings
-          </button>
         </div>
 
       </div>
@@ -844,122 +837,62 @@
       currentBookPath = selector.value;
       if (!currentBookPath) return;
 
+      const container = document.getElementById('readerContent');
+      container.innerHTML = '<div style="text-align: center; color: var(--text-muted); margin-top: 100px;">📖 Loading book text and checking audiobook...</div>';
+
       try {
         const resp = await fetch(`/api/book_details?path=${encodeURIComponent(currentBookPath)}&_t=${Date.now()}`);
         const data = await resp.json();
 
         if (!data.ok) {
-          console.error(data.error);
-          const bTitleEl = document.getElementById('currentBookTitle');
-          if (bTitleEl) bTitleEl.textContent = `⚠️ ${data.error || 'Failed to load book'}`;
-          document.getElementById('chapterList').innerHTML = `<li style="color: #ef4444; font-size: 12px; padding: 10px;">⚠️ ${data.error || 'Failed to extract chapters'}</li>`;
+          container.innerHTML = `<div style="text-align: center; color: #ef4444; margin-top: 100px;">⚠️ ${data.error || 'Failed to load book'}</div>`;
           return;
         }
 
         currentBookTitle = data.title;
-        const bTitleEl = document.getElementById('currentBookTitle');
-        if (bTitleEl) bTitleEl.textContent = `${data.title} · ${data.author}`;
-        chapters = data.chapters || [];
-        const hasReal = data.has_real_chapters !== false;
+        document.getElementById('playerTrackTitle').textContent = `${data.title} · ${data.author}`;
+        document.getElementById('bookInfoWords').textContent = Number(data.total_words || 0).toLocaleString();
+        document.getElementById('bookInfoDuration').textContent = data.total_duration || '0 min';
 
-        const totalChEl = document.getElementById('totalChapters');
-        if (totalChEl) {
-          totalChEl.textContent = hasReal ? `${Math.max(1, chapters.length - 1)} CH` : 'FULL BOOK';
+        // Render full continuous book text
+        if (data.paragraphs && data.paragraphs.length > 0) {
+          renderBookText(data.paragraphs);
         }
 
-        const listEl = document.getElementById('chapterList');
-        listEl.innerHTML = '';
+        // Check M4B Status
+        const badge = document.getElementById('m4bStatusBadge');
+        if (data.has_m4b && data.m4b_url) {
+          // .m4b exists: Load it immediately
+          badge.textContent = '✅ M4B Ready';
+          badge.style.background = 'rgba(16, 185, 129, 0.15)';
+          badge.style.color = '#34d399';
+          badge.style.borderColor = 'rgba(16, 185, 129, 0.3)';
 
-        chapters.forEach((ch, idx) => {
-          const li = document.createElement('li');
-          li.className = `chapter-item ${idx === 0 ? 'active' : ''}`;
-          li.onclick = () => selectChapter(ch.index);
-          const isFull = ch.index === 0;
-          li.innerHTML = `
-            <div style="overflow: hidden; padding-right: 8px;">
-              <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: ${isFull ? '700' : '500'}; color: ${isFull ? 'var(--primary)' : 'inherit'};">${isFull ? ch.title : `${ch.index}. ${ch.title}`}</div>
-              <div class="ch-meta">${ch.words} words • ${ch.duration}</div>
-            </div>
-            <span style="color: var(--primary); font-size: 11px;">▶</span>
-          `;
-          listEl.appendChild(li);
-        });
+          audio.src = data.m4b_url;
+          document.getElementById('btnDownloadM4b').href = data.m4b_url;
+          document.getElementById('btnDownloadM4b').style.display = 'inline-flex';
+          const pauseCtrl = document.getElementById('btnPauseAudioControl');
+          if (pauseCtrl) pauseCtrl.innerHTML = '▶ Play Audio';
 
-        if (chapters.length > 0) {
-          selectChapter(chapters[0].index);
+          // Check if there is a saved bookmark to resume
+          checkSavedBookmark();
+        } else {
+          // .m4b does NOT exist: Automatically start background synthesis and play when ready
+          badge.textContent = '⏳ Synthesizing M4B...';
+          badge.style.background = 'rgba(245, 158, 11, 0.15)';
+          badge.style.color = '#fbbf24';
+          badge.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+          audio.src = '';
+
+          synthesizeEntireBook(true); // autoPlay=true
         }
       } catch (e) {
         console.error('Failed to load book details:', e);
       }
     }
 
-    // 3. Center Pane Chapter / Full Book Content Loading
-    async function selectChapter(chIndex) {
-      currentChapterIndex = chIndex;
-      const ch = chapters.find(c => c.index === chIndex);
-      if (!ch) return;
-
-      // Update active list style
-      const items = document.querySelectorAll('.chapter-item');
-      items.forEach((item, idx) => {
-        const itemCh = chapters[idx];
-        item.classList.toggle('active', itemCh && itemCh.index === chIndex);
-      });
-
-      const isFull = chIndex === 0;
-      const trackTitle = isFull ? `${currentBookTitle} · Full Book` : `${currentBookTitle} · Ch ${ch.index}`;
-      document.getElementById('playerTrackTitle').textContent = trackTitle;
-
-      const container = document.getElementById('readerContent');
-      container.innerHTML = '<div style="text-align: center; color: var(--text-muted); margin-top: 80px;">Loading book text...</div>';
-
-      try {
-        const resp = await fetch(`/api/chapter_content?path=${encodeURIComponent(currentBookPath)}&chapter=${chIndex}&_t=${Date.now()}`);
-        const data = await resp.json();
-
-        if (data.ok && data.paragraphs && data.paragraphs.length > 0) {
-          renderChapterText(data.paragraphs);
-
-          // Update audio source if audio file exists
-          if (data.audio_url) {
-            audio.src = data.audio_url;
-            document.getElementById('btnDownloadMp3').href = data.audio_url;
-            document.getElementById('btnDownloadMp3').style.display = 'inline-flex';
-            if (data.m4b_url) {
-              const m4bBtn = document.getElementById('btnDownloadM4b');
-              if (m4bBtn) {
-                m4bBtn.href = data.m4b_url;
-                m4bBtn.style.display = 'inline-flex';
-              }
-            }
-            const listenTxt = document.getElementById('listenBtnText');
-            if (listenTxt) listenTxt.textContent = isFull ? 'Play Full Audiobook' : 'Play Chapter Audio';
-            const pauseCtrl = document.getElementById('btnPauseAudioControl');
-            if (pauseCtrl) pauseCtrl.innerHTML = '▶ Play Audio';
-            document.getElementById('playerTrackTitle').textContent = trackTitle;
-          } else {
-            audio.src = '';
-            document.getElementById('btnDownloadMp3').style.display = 'none';
-            const listenTxt = document.getElementById('listenBtnText');
-            if (listenTxt) listenTxt.textContent = isFull ? 'Synthesize Full Book (.m4b)' : 'Synthesize & Play';
-            const pauseCtrl = document.getElementById('btnPauseAudioControl');
-            if (pauseCtrl) pauseCtrl.innerHTML = '▶ Synthesize & Play';
-            document.getElementById('playerTrackTitle').textContent = `${trackTitle} (Click ▶ to Narrate)`;
-          }
-        } else {
-          container.innerHTML = `
-            <div style="text-align: center; color: var(--text-muted); margin-top: 80px;">
-              <h3>No paragraphs found</h3>
-              <p style="font-size: 13px; margin-top: 6px;">${data.error || 'Empty book content.'}</p>
-            </div>
-          `;
-        }
-      } catch (e) {
-        container.innerHTML = `<div style="text-align: center; color: #ef4444; margin-top: 80px;">Failed to load book text: ${e.message}</div>`;
-      }
-    }
-
-    function renderChapterText(paras) {
+    // Render Full Continuous Book Content
+    function renderBookText(paras) {
       const container = document.getElementById('readerContent');
       container.innerHTML = '';
 
@@ -982,10 +915,17 @@
 
         // Split sentences for fine-grained highlighting
         const sentences = p.text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [p.text];
+        const paraStart = parseFloat(p.start || 0);
+        const paraEnd = parseFloat(p.end || 0);
+        const paraDuration = Math.max(0.1, paraEnd - paraStart);
+        const sentDur = paraDuration / Math.max(1, sentences.length);
+
         sentences.forEach((sent, sIdx) => {
           const sSpan = document.createElement('span');
           sSpan.className = 'sentence-span';
           sSpan.id = `sent-${pIdx}-${sIdx}`;
+          sSpan.dataset.start = (paraStart + sIdx * sentDur).toFixed(2);
+          sSpan.dataset.end = (paraStart + (sIdx + 1) * sentDur).toFixed(2);
 
           const words = sent.split(/(\s+)/);
           words.forEach(w => {
@@ -1002,23 +942,29 @@
           pEl.appendChild(sSpan);
         });
 
-        pEl.onclick = async () => {
-          const start = parseFloat(pEl.dataset.start);
-          if (audio.src && audio.duration && !isNaN(audio.duration) && audio.duration > 2) {
-            if (!isNaN(start)) {
-              audio.currentTime = start;
-              if (audio.paused) audio.play();
+        // Click-to-Read anywhere on text: seeks and continues smoothly!
+        pEl.onclick = (e) => {
+          let seekTime = parseFloat(pEl.dataset.start);
+          let target = e.target;
+          while (target && target !== pEl) {
+            if (target.classList && target.classList.contains('sentence-span')) {
+              const sTime = parseFloat(target.dataset.start);
+              if (!isNaN(sTime)) seekTime = sTime;
+              break;
             }
-          } else {
-            narrateSingleParagraph(pEl, rawText);
+            target = target.parentElement;
+          }
+
+          if (audio.src && audio.duration && !isNaN(audio.duration) && audio.duration > 1) {
+            audio.currentTime = seekTime;
+            if (audio.paused) audio.play();
           }
         };
 
         container.appendChild(pEl);
       });
 
-      // Calibrate timings if audio is already active
-      if (audio.duration && !isNaN(audio.duration) && audio.duration > 2) {
+      if (audio.duration && !isNaN(audio.duration) && audio.duration > 1) {
         calibrateParagraphTimings();
       }
     }
@@ -1048,134 +994,54 @@
         const e = parseFloat(block.dataset.origEnd);
         block.dataset.start = (s * scale).toFixed(2);
         block.dataset.end = (e * scale).toFixed(2);
+
+        // Also scale sentence spans
+        const sSpans = block.querySelectorAll('.sentence-span');
+        const count = sSpans.length;
+        if (count > 0) {
+          const bStart = s * scale;
+          const bDur = (e - s) * scale;
+          const sDur = bDur / count;
+          sSpans.forEach((sp, idx) => {
+            sp.dataset.start = (bStart + idx * sDur).toFixed(2);
+            sp.dataset.end = (bStart + (idx + 1) * sDur).toFixed(2);
+          });
+        }
       });
     }
 
-    // Instant Click-to-Read for any paragraph
-    let activeParaReadTimer = null;
-    async function narrateSingleParagraph(pEl, text) {
-      document.querySelectorAll('.paragraph-block').forEach(b => b.classList.remove('active-para'));
-      pEl.classList.add('active-para');
-      pEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-      const voice = document.getElementById('voiceSelect').value;
-      const speed = parseFloat(document.getElementById('speedSlider').value);
-      const pitch = parseInt(document.getElementById('pitchSlider').value);
-
-      document.getElementById('playerTrackTitle').textContent = `Reading: "${text.slice(0, 45)}..."`;
-
+    // Playback Bookmarking (Saves & Resumes position)
+    let lastSavedTime = 0;
+    function savePlaybackPosition(cur) {
+      if (!currentBookPath || isNaN(cur) || Math.abs(cur - lastSavedTime) < 2) return;
+      lastSavedTime = cur;
       try {
-        const resp = await fetch('/api/read_paragraph', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, voice, speed, pitch })
-        });
-        const data = await resp.json();
-        if (data.ok && data.audioUrl) {
-          audio.src = data.audioUrl + '?t=' + Date.now();
-          audio.playbackRate = speed;
-          audio.play();
+        localStorage.setItem(`b2a_pos_${currentBookPath}`, cur.toFixed(1));
+      } catch (_) {}
+    }
 
-          const onEnd = () => {
-            audio.removeEventListener('ended', onEnd);
-            const nextP = pEl.nextElementSibling;
-            if (nextP && nextP.classList.contains('paragraph-block')) {
-              const nextText = nextP.textContent.trim();
-              if (nextText) narrateSingleParagraph(nextP, nextText);
-            }
-          };
-          audio.addEventListener('ended', onEnd);
-        }
-      } catch (e) {
-        console.error('Narrate paragraph error:', e);
+    function checkSavedBookmark() {
+      const saved = localStorage.getItem(`b2a_pos_${currentBookPath}`);
+      const btn = document.getElementById('btnResumePosition');
+      const label = document.getElementById('resumeTimeLabel');
+      if (saved && parseFloat(saved) > 3) {
+        label.textContent = formatTime(parseFloat(saved));
+        btn.style.display = 'block';
+      } else {
+        btn.style.display = 'none';
       }
     }
 
-    // 4. Live Parameter Modifications (Instant Effect on Ongoing Audio)
-    function onSpeedSliderChanged(val) {
-      const speed = parseFloat(val);
-      document.getElementById('speedDisplay').textContent = `${speed.toFixed(2)}x`;
-
-      // ⚡ IMMEDIATE EFFECT: Adjust playback speed of ongoing audio instantly!
-      audio.playbackRate = speed;
-
-      // Keep bottom playback rate dropdown in sync
-      const rateSelect = document.getElementById('playbackRateSelect');
-      if (rateSelect) {
-        // Find closest option or add dynamic value
-        let match = Array.from(rateSelect.options).find(o => Math.abs(parseFloat(o.value) - speed) < 0.04);
-        if (match) rateSelect.value = match.value;
-      }
-
-      updateTrackSub();
-    }
-
-    function onPlaybackRateSelectChanged(val) {
-      const speed = parseFloat(val);
-      document.getElementById('speedSlider').value = speed;
-      document.getElementById('speedDisplay').textContent = `${speed.toFixed(2)}x`;
-      audio.playbackRate = speed;
-      updateTrackSub();
-    }
-
-    function onPitchSliderChanged(val) {
-      const pitch = parseInt(val);
-      document.getElementById('pitchDisplay').textContent = `+${pitch} st`;
-      updateTrackSub();
-
-      // If auto-preview is on, trigger instant voice audition on slider release
-      const autoPreview = document.getElementById('autoPreviewCheck').checked;
-      if (autoPreview) {
-        debounceAudition();
+    function resumeSavedPlayback() {
+      const saved = localStorage.getItem(`b2a_pos_${currentBookPath}`);
+      if (saved && audio.src) {
+        audio.currentTime = parseFloat(saved);
+        if (audio.paused) audio.play();
+        document.getElementById('btnResumePosition').style.display = 'none';
       }
     }
 
-    function onVoiceChanged() {
-      updateTrackSub();
-      const autoPreview = document.getElementById('autoPreviewCheck').checked;
-      if (autoPreview) {
-        playAudition();
-      }
-    }
-
-    function updateTrackSub() {
-      const voice = document.getElementById('voiceSelect').value;
-      const speed = document.getElementById('speedSlider').value;
-      document.getElementById('playerTrackSub').textContent = `Kokoro Neural · ${voice} @ ${speed}x (320 kbps Studio)`;
-    }
-
-    let auditionDebounceTimer = null;
-    function debounceAudition() {
-      clearTimeout(auditionDebounceTimer);
-      auditionDebounceTimer = setTimeout(() => {
-        playAudition();
-      }, 400);
-    }
-
-    async function playAudition() {
-      const text = document.getElementById('auditionText').value;
-      const voice = document.getElementById('voiceSelect').value;
-      const speed = parseFloat(document.getElementById('speedSlider').value);
-      const pitch = parseInt(document.getElementById('pitchSlider').value);
-
-      try {
-        const resp = await fetch('/api/audition', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, voice, speed, pitch })
-        });
-        const data = await resp.json();
-        if (data.ok && data.audioUrl) {
-          audio.src = data.audioUrl + '?t=' + Date.now();
-          audio.playbackRate = speed;
-          audio.play();
-        }
-      } catch (e) {
-        console.error('Audition error:', e);
-      }
-    }
-
-    // 5. Audio Player & Speed Reading Highlighting
+    // Audio Player & Speed Reading Highlighting
     function setupAudioListeners() {
       audio.addEventListener('timeupdate', () => {
         const cur = audio.currentTime;
@@ -1184,6 +1050,7 @@
         document.getElementById('totalDuration').textContent = formatTime(dur);
         document.getElementById('seekSlider').value = (cur / dur) * 100;
 
+        savePlaybackPosition(cur);
         highlightActiveReading(cur);
       });
 
@@ -1196,7 +1063,7 @@
       audio.addEventListener('pause', () => {
         document.getElementById('btnPlayPause').textContent = '▶';
         const pCtrl = document.getElementById('btnPauseAudioControl');
-        if (pCtrl) pCtrl.innerHTML = '▶ Resume Audio';
+        if (pCtrl) pCtrl.innerHTML = '▶ Play Audio';
       });
 
       audio.addEventListener('ended', () => {
@@ -1273,17 +1140,9 @@
       });
     }
 
-    function onListenChapterClicked() {
-      if (audio.src) {
-        togglePlayPause();
-      } else {
-        synthesizeCurrentChapter();
-      }
-    }
-
     function togglePlayPause() {
       if (!audio.src) {
-        synthesizeCurrentChapter();
+        synthesizeEntireBook(true);
         return;
       }
       if (audio.paused) {
@@ -1328,66 +1187,46 @@
       el.style.fontSize = `${Math.max(14, Math.min(26, curSize + delta))}px`;
     }
 
-    async function synthesizeCurrentChapter() {
-      const container = document.getElementById('progressContainer');
-      const bar = document.getElementById('progressBar');
-      const status = document.getElementById('progressStatus');
-      const pct = document.getElementById('progressPercent');
+    // Live Parameter Modifications (Instant Effect on Ongoing Audio)
+    function onSpeedSliderChanged(val) {
+      const speed = parseFloat(val);
+      document.getElementById('speedDisplay').textContent = `${speed.toFixed(2)}x`;
+      audio.playbackRate = speed;
 
-      container.style.display = 'block';
-      bar.style.width = '10%';
-      pct.textContent = '10%';
-      status.textContent = 'Extracting and planning prosody...';
-
-      const voice = document.getElementById('voiceSelect').value;
-      const speed = parseFloat(document.getElementById('speedSlider').value);
-      const pitch = parseInt(document.getElementById('pitchSlider').value);
-
-      try {
-        const resp = await fetch('/api/synthesize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            path: currentBookPath,
-            chapter: currentChapterIndex,
-            voice,
-            speed,
-            pitch
-          })
-        });
-
-        let timer = setInterval(async () => {
-          try {
-            const pResp = await fetch('/api/progress');
-            const pData = await pResp.json();
-            bar.style.width = `${pData.percent}%`;
-            pct.textContent = `${pData.percent}%`;
-            status.textContent = pData.message;
-
-            if (!pData.active || pData.percent >= 100) {
-              clearInterval(timer);
-              status.textContent = 'Synthesis complete!';
-              if (pData.audioUrl) {
-                audio.src = pData.audioUrl + '?t=' + Date.now();
-                audio.playbackRate = speed;
-                audio.play();
-                document.getElementById('btnDownloadMp3').href = pData.audioUrl;
-                document.getElementById('btnDownloadMp3').style.display = 'inline-flex';
-                const listenTxt = document.getElementById('listenBtnText');
-                if (listenTxt) listenTxt.textContent = 'Pause Audio';
-                const pCtrl = document.getElementById('btnPauseAudioControl');
-                if (pCtrl) pCtrl.innerHTML = '⏸ Pause Audio';
-                document.getElementById('playerTrackTitle').textContent = `${currentBookTitle} · Ch ${currentChapterIndex}`;
-              }
-            }
-          } catch (_) {}
-        }, 1000);
-      } catch (e) {
-        status.textContent = 'Error starting synthesis';
+      const rateSelect = document.getElementById('playbackRateSelect');
+      if (rateSelect) {
+        let match = Array.from(rateSelect.options).find(o => Math.abs(parseFloat(o.value) - speed) < 0.04);
+        if (match) rateSelect.value = match.value;
       }
+      updateTrackSub();
     }
 
-    async function synthesizeEntireBook() {
+    function onPlaybackRateSelectChanged(val) {
+      const speed = parseFloat(val);
+      document.getElementById('speedSlider').value = speed;
+      document.getElementById('speedDisplay').textContent = `${speed.toFixed(2)}x`;
+      audio.playbackRate = speed;
+      updateTrackSub();
+    }
+
+    function onPitchSliderChanged(val) {
+      const pitch = parseInt(val);
+      document.getElementById('pitchDisplay').textContent = `+${pitch} st`;
+      updateTrackSub();
+    }
+
+    function onVoiceChanged() {
+      updateTrackSub();
+    }
+
+    function updateTrackSub() {
+      const voice = document.getElementById('voiceSelect').value;
+      const speed = document.getElementById('speedSlider').value;
+      document.getElementById('playerTrackSub').textContent = `Kokoro Neural · ${voice} @ ${speed}x (320 kbps M4B)`;
+    }
+
+    // Build Entire Audiobook (.m4b)
+    async function synthesizeEntireBook(autoPlay = false) {
       const container = document.getElementById('progressContainer');
       const bar = document.getElementById('progressBar');
       const status = document.getElementById('progressStatus');
@@ -1396,7 +1235,7 @@
       container.style.display = 'block';
       bar.style.width = '10%';
       pct.textContent = '10%';
-      status.textContent = 'Initializing complete audiobook (.m4b) conversion...';
+      status.textContent = 'Synthesizing complete audiobook (.m4b)...';
 
       const voice = document.getElementById('voiceSelect').value;
       const speed = parseFloat(document.getElementById('speedSlider').value);
@@ -1426,13 +1265,23 @@
 
             if (!pData.active || pData.percent >= 100) {
               clearInterval(timer);
-              status.textContent = 'Audiobook (.m4b) conversion complete!';
+              status.textContent = 'Audiobook (.m4b) ready!';
               setTimeout(() => { container.style.display = 'none'; }, 1500);
+
+              const badge = document.getElementById('m4bStatusBadge');
+              if (badge) {
+                badge.textContent = '✅ M4B Ready';
+                badge.style.background = 'rgba(16, 185, 129, 0.15)';
+                badge.style.color = '#34d399';
+                badge.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+              }
 
               if (pData.audioUrl) {
                 audio.src = pData.audioUrl + '?t=' + Date.now();
                 audio.playbackRate = speed;
-                audio.play();
+                if (autoPlay) {
+                  audio.play();
+                }
 
                 if (pData.m4bUrl) {
                   const m4bBtn = document.getElementById('btnDownloadM4b');
@@ -1441,13 +1290,9 @@
                     m4bBtn.style.display = 'inline-flex';
                   }
                 }
-                document.getElementById('btnDownloadMp3').href = pData.audioUrl;
-                document.getElementById('btnDownloadMp3').style.display = 'inline-flex';
 
-                const listenTxt = document.getElementById('listenBtnText');
-                if (listenTxt) listenTxt.textContent = 'Pause Audiobook';
                 const pCtrl = document.getElementById('btnPauseAudioControl');
-                if (pCtrl) pCtrl.innerHTML = '⏸ Pause Audio';
+                if (pCtrl) pCtrl.innerHTML = autoPlay ? '⏸ Pause Audio' : '▶ Play Audio';
                 document.getElementById('playerTrackTitle').textContent = `${currentBookTitle} · Complete Audiobook (.m4b)`;
               }
             }

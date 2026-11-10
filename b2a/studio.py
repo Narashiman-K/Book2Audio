@@ -253,34 +253,39 @@ class StudioHandler(SimpleHTTPRequestHandler):
             total_mins = max(1, round(total_words / 160))
             total_dur_str = f"{total_mins} min" if total_mins < 60 else f"{total_mins // 60}h {total_mins % 60}m"
 
-            ch_list = []
-            if not has_real_chapters:
-                # Do not show 150 fake page fragments! Single continuous full book mode
-                ch_list.append({
-                    "index": 0,
-                    "title": "📖 Entire Book (Full Text)",
-                    "paragraphs": total_paras,
-                    "words": total_words,
-                    "duration": total_dur_str,
-                })
-            else:
-                # Provide Full Book option first, followed by genuine chapters
-                ch_list.append({
-                    "index": 0,
-                    "title": "📖 Entire Book (Full Text)",
-                    "paragraphs": total_paras,
-                    "words": total_words,
-                    "duration": total_dur_str,
-                })
-                for c in book.chapters:
-                    word_count = sum(len(p.text.split()) for p in c.paragraphs)
-                    mins = max(1, round(word_count / 160))
-                    ch_list.append({
-                        "index": c.index,
-                        "title": _clean_title(c.title),
-                        "paragraphs": len(c.paragraphs),
-                        "words": word_count,
-                        "duration": f"{mins} min" if mins < 60 else f"{mins // 60}h {mins % 60}m",
+            # Check if .m4b already exists for this book
+            out_root = self.b2a_dir / "output_kokoro"
+            book_slug = slugify(book.title)
+            book_out_dir = out_root / book_slug
+            m4b_url = ""
+            if book_out_dir.exists():
+                for cand in book_out_dir.glob("*.m4b"):
+                    if cand.is_file():
+                        rel = cand.relative_to(self.workspace_dir)
+                        m4b_url = f"/api/audio/{rel.as_posix()}"
+                        break
+            if not m4b_url and out_root.exists():
+                for cand in out_root.glob(f"*{book_slug}*.m4b"):
+                    if cand.is_file():
+                        rel = cand.relative_to(self.workspace_dir)
+                        m4b_url = f"/api/audio/{rel.as_posix()}"
+                        break
+
+            # Collect all paragraphs across the entire book for seamless continuous reading
+            all_paragraphs = []
+            cur_sec = 0.5
+            for c in book.chapters:
+                for p in c.paragraphs:
+                    words = len(p.text.split())
+                    dur = max(1.5, words / 3.0)
+                    p_start = cur_sec
+                    p_end = cur_sec + dur
+                    cur_sec = p_end + 0.4
+                    all_paragraphs.append({
+                        "id": p.id,
+                        "text": p.text,
+                        "start": round(p_start, 2),
+                        "end": round(p_end, 2),
                     })
 
             self._send_json({
@@ -290,10 +295,12 @@ class StudioHandler(SimpleHTTPRequestHandler):
                 "filename": book_path.name,
                 "path": str(book_path),
                 "has_real_chapters": has_real_chapters,
+                "has_m4b": bool(m4b_url),
+                "m4b_url": m4b_url,
                 "total_paragraphs": total_paras,
                 "total_words": total_words,
                 "total_duration": total_dur_str,
-                "chapters": ch_list,
+                "paragraphs": all_paragraphs,
             })
         except Exception as e:
             log.exception("Error extracting book details: %s", e)
@@ -488,8 +495,14 @@ class StudioHandler(SimpleHTTPRequestHandler):
         range_header = self.headers.get("Range")
 
         mime_type, _ = mimetypes.guess_type(str(target_path))
-        if not mime_type:
-            mime_type = "audio/mpeg" if target_path.suffix == ".mp3" else "audio/wav"
+        if target_path.suffix.lower() == ".m4b":
+            mime_type = "audio/mp4"
+        elif target_path.suffix.lower() == ".mp3":
+            mime_type = "audio/mpeg"
+        elif target_path.suffix.lower() in (".wav", ".wave"):
+            mime_type = "audio/wav"
+        elif not mime_type:
+            mime_type = "audio/mp4"
 
         if range_header:
             m = re.match(r"bytes=(\d+)-(\d*)", range_header)
