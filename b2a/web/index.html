@@ -561,11 +561,6 @@
 
     <!-- Column 2: Synchronized Speed-Reading Reader -->
     <div class="panel" style="background: #090e1a;">
-      <div class="reader-toolbar" style="padding: 10px 24px; min-height: 48px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
-        <div class="reader-title-group">
-          <h2 id="currentChapterHeading" style="font-size: 15px; font-weight: 600; color: var(--text);">Select a Chapter</h2>
-        </div>
-      </div>
       <div class="reader-content font-serif" id="readerContent">
         <div style="text-align: center; color: var(--text-muted); margin-top: 100px;">
           <div style="font-size: 32px; margin-bottom: 12px;">📖</div>
@@ -808,7 +803,7 @@
     // 2. Load Books Dynamically from Server
     async function loadAvailableBooks(selectPath = '') {
       try {
-        const resp = await fetch('/api/books');
+        const resp = await fetch(`/api/books?_t=${Date.now()}`);
         const data = await resp.json();
         const selector = document.getElementById('bookSelector');
         selector.innerHTML = '';
@@ -850,7 +845,7 @@
       if (!currentBookPath) return;
 
       try {
-        const resp = await fetch(`/api/book_details?path=${encodeURIComponent(currentBookPath)}`);
+        const resp = await fetch(`/api/book_details?path=${encodeURIComponent(currentBookPath)}&_t=${Date.now()}`);
         const data = await resp.json();
 
         if (!data.ok) {
@@ -916,7 +911,7 @@
       container.innerHTML = '<div style="text-align: center; color: var(--text-muted); margin-top: 80px;">Loading chapter paragraphs...</div>';
 
       try {
-        const resp = await fetch(`/api/chapter_content?path=${encodeURIComponent(currentBookPath)}&chapter=${chIndex}`);
+        const resp = await fetch(`/api/chapter_content?path=${encodeURIComponent(currentBookPath)}&chapter=${chIndex}&_t=${Date.now()}`);
         const data = await resp.json();
 
         if (data.ok && data.paragraphs && data.paragraphs.length > 0) {
@@ -960,10 +955,14 @@
 
       paras.forEach((p, pIdx) => {
         if (!p.text || !p.text.trim()) return;
+        const rawText = p.text.trim();
+        if (rawText.startsWith('<!--') || /suprasuta/i.test(rawText) || /^Page\s+\d+$/i.test(rawText)) {
+          return;
+        }
 
         const pEl = document.createElement('div');
         pEl.className = 'paragraph-block';
-        if (p.text.length < 80 && (p.text.toUpperCase() === p.text || /^(Chapter|Part|Section)\b/i.test(p.text))) {
+        if (rawText.length < 80 && (rawText.toUpperCase() === rawText || /^(Chapter|Part|Section)\b/i.test(rawText))) {
           pEl.classList.add('reader-heading');
         }
         pEl.id = `para-${pIdx}`;
