@@ -761,8 +761,10 @@
 
         availableBooks.forEach(b => {
           const opt = document.createElement('option');
-          opt.value = b.path;
-          opt.textContent = `${b.label} (${b.size_mb} MB)`;
+          opt.value = b.path || b.filename;
+          const displayLabel = b.label || b.title || b.filename || 'Unknown Document';
+          const sizeText = (b.size_mb !== undefined && b.size_mb !== null) ? ` (${b.size_mb} MB)` : '';
+          opt.textContent = `${displayLabel}${sizeText}`;
           selector.appendChild(opt);
         });
 
@@ -790,6 +792,8 @@
 
         if (!data.ok) {
           console.error(data.error);
+          document.getElementById('currentBookTitle').textContent = `⚠️ ${data.error || 'Failed to load book'}`;
+          document.getElementById('chapterList').innerHTML = `<li style="color: #ef4444; font-size: 12px; padding: 10px;">⚠️ ${data.error || 'Failed to extract chapters'}</li>`;
           return;
         }
 

@@ -13,8 +13,15 @@ Design notes
 from __future__ import annotations
 
 import re
+import warnings
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
+
+try:
+    from bs4 import XMLParsedAsHTMLWarning
+    warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+except ImportError:
+    pass
 
 from .clean import clean_paragraph_text, load_lexicon, strip_markdown
 from .models import Book, Chapter, Paragraph
