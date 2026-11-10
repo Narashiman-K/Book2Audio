@@ -73,7 +73,7 @@
     /* Workspace */
     .workspace {
       display: grid;
-      grid-template-columns: 290px 1fr 350px;
+      grid-template-columns: 280px 1fr 270px;
       flex: 1;
       overflow: hidden;
     }
@@ -99,9 +99,51 @@
       color: var(--text-muted);
     }
     .panel-body {
-      padding: 16px;
+      padding: 14px;
       overflow-y: auto;
       flex: 1;
+    }
+
+    /* Compact Reader Tools under Active Book */
+    .reader-tools-compact {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 5px;
+      margin-top: 8px;
+      margin-bottom: 14px;
+      padding: 5px 8px;
+      background: rgba(19, 29, 51, 0.7);
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .btn-tool-compact {
+      background: #1c2b4d;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 3px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      transition: all 0.15s ease;
+    }
+    .btn-tool-compact:hover {
+      background: #233457;
+      color: var(--text);
+    }
+    .btn-tool-compact.active {
+      background: rgba(6, 182, 212, 0.15);
+      border-color: var(--primary);
+      color: #38bdf8;
+    }
+    .font-tools-compact {
+      display: flex;
+      align-items: center;
+      gap: 3px;
     }
 
     /* Library Panel */
@@ -219,6 +261,15 @@
     .paragraph-block.active-para {
       background: rgba(6, 182, 212, 0.08);
       border-left-color: var(--primary);
+    }
+    .paragraph-block.reader-heading {
+      font-size: 1.25em;
+      font-weight: 700;
+      color: #38bdf8;
+      margin-top: 26px;
+      margin-bottom: 12px;
+      border-left: none;
+      padding-left: 4px;
     }
     .sentence-span {
       padding: 2px 4px;
@@ -489,7 +540,19 @@
           <option value="" disabled selected>Loading available books...</option>
         </select>
 
-        <label class="select-label" style="margin-top: 14px;">Chapters (<span id="totalChapters">0</span>)</label>
+        <!-- Compact Reader Tools under Active Book -->
+        <div class="reader-tools-compact">
+          <button class="btn-tool-compact active" id="btnAutoScroll" onclick="toggleAutoScroll()" title="Toggle Auto-Scroll">
+            📜 Auto-Scroll: <span id="autoScrollStatus">ON</span>
+          </button>
+          <div class="font-tools-compact">
+            <button class="btn-tool-compact" onclick="toggleSerif()" title="Toggle Serif / Sans">🔤 Font</button>
+            <button class="btn-tool-compact" onclick="adjustFontSize(-1)" title="Smaller text">A-</button>
+            <button class="btn-tool-compact" onclick="adjustFontSize(1)" title="Larger text">A+</button>
+          </div>
+        </div>
+
+        <label class="select-label" style="margin-top: 10px;">Chapters (<span id="totalChapters">0</span>)</label>
         <ul class="chapter-list" id="chapterList">
           <li style="color: var(--text-muted); font-size: 12px; padding: 8px;">Select a book above.</li>
         </ul>
@@ -498,23 +561,9 @@
 
     <!-- Column 2: Synchronized Speed-Reading Reader -->
     <div class="panel" style="background: #090e1a;">
-      <div class="reader-toolbar">
+      <div class="reader-toolbar" style="padding: 10px 24px; min-height: 48px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
         <div class="reader-title-group">
-          <h2 id="currentChapterHeading">Select a Chapter</h2>
-          <p id="currentBookTitle">No book loaded</p>
-        </div>
-        <div class="reader-controls">
-          <button class="btn-tool active" id="btnListenChapter" onclick="onListenChapterClicked()" title="Play or Synthesize Chapter Audio" style="background: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #34d399; font-weight: 700;">
-            🎙️ <span id="listenBtnText">Synthesize & Play</span>
-          </button>
-          <button class="btn-tool active" id="btnAutoScroll" onclick="toggleAutoScroll()" title="Auto-scroll to current speaking text">
-            📜 Auto-Scroll: <span id="autoScrollStatus">ON</span>
-          </button>
-          <button class="btn-tool" onclick="toggleSerif()" title="Toggle Serif / Sans typography">
-            🔤 Font
-          </button>
-          <button class="btn-tool" onclick="adjustFontSize(-1)">A-</button>
-          <button class="btn-tool" onclick="adjustFontSize(1)">A+</button>
+          <h2 id="currentChapterHeading" style="font-size: 15px; font-weight: 600; color: var(--text);">Select a Chapter</h2>
         </div>
       </div>
       <div class="reader-content font-serif" id="readerContent">
@@ -530,7 +579,6 @@
     <div class="panel">
       <div class="panel-header">
         <span>Narration Studio Rack</span>
-        <span style="color: var(--accent);">Kokoro Neural</span>
       </div>
       <div class="panel-body">
         
@@ -638,10 +686,13 @@
     </div>
 
     <div class="player-controls">
-      <div class="transport-buttons">
+      <div class="transport-buttons" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
         <button class="btn-circle" onclick="seekRelative(-10)" title="Rewind 10 seconds">↺ 10</button>
-        <button class="btn-circle play-btn" id="btnPlayPause" onclick="togglePlayPause()">▶</button>
+        <button class="btn-circle play-btn" id="btnPlayPause" onclick="togglePlayPause()" title="Play / Pause Audio">▶</button>
         <button class="btn-circle" onclick="seekRelative(10)" title="Forward 10 seconds">10 ↻</button>
+        <button id="btnPauseAudioControl" onclick="togglePlayPause()" style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; color: #34d399; font-weight: 600; font-size: 11px; padding: 5px 10px; border-radius: 6px; cursor: pointer; margin-left: 6px;" title="Pause or Resume Audio">
+          ⏸ Pause Audio
+        </button>
       </div>
       <div class="timeline-row">
         <span class="time-badge" id="currentTime">00:00</span>
@@ -804,13 +855,15 @@
 
         if (!data.ok) {
           console.error(data.error);
-          document.getElementById('currentBookTitle').textContent = `⚠️ ${data.error || 'Failed to load book'}`;
+          const bTitleEl = document.getElementById('currentBookTitle');
+          if (bTitleEl) bTitleEl.textContent = `⚠️ ${data.error || 'Failed to load book'}`;
           document.getElementById('chapterList').innerHTML = `<li style="color: #ef4444; font-size: 12px; padding: 10px;">⚠️ ${data.error || 'Failed to extract chapters'}</li>`;
           return;
         }
 
         currentBookTitle = data.title;
-        document.getElementById('currentBookTitle').textContent = `${data.title} · ${data.author}`;
+        const bTitleEl = document.getElementById('currentBookTitle');
+        if (bTitleEl) bTitleEl.textContent = `${data.title} · ${data.author}`;
         chapters = data.chapters || [];
         document.getElementById('totalChapters').textContent = chapters.length;
 
@@ -851,7 +904,12 @@
         item.classList.toggle('active', idx === (chIndex - 1));
       });
 
-      document.getElementById('currentChapterHeading').textContent = `Chapter ${String(ch.index).padStart(2, '0')} · ${ch.title}`;
+      const headingEl = document.getElementById('currentChapterHeading');
+      if (headingEl) {
+        headingEl.textContent = ch.title.toLowerCase().startsWith('chapter')
+          ? ch.title
+          : `Chapter ${String(ch.index).padStart(2, '0')} · ${ch.title}`;
+      }
       document.getElementById('playerTrackTitle').textContent = `${currentBookTitle} · Ch ${ch.index}`;
 
       const container = document.getElementById('readerContent');
@@ -869,12 +927,18 @@
             audio.src = data.audio_url;
             document.getElementById('btnDownloadMp3').href = data.audio_url;
             document.getElementById('btnDownloadMp3').style.display = 'inline-flex';
-            document.getElementById('listenBtnText').textContent = 'Play Chapter Audio';
+            const listenTxt = document.getElementById('listenBtnText');
+            if (listenTxt) listenTxt.textContent = 'Play Chapter Audio';
+            const pauseCtrl = document.getElementById('btnPauseAudioControl');
+            if (pauseCtrl) pauseCtrl.innerHTML = '▶ Play Audio';
             document.getElementById('playerTrackTitle').textContent = `${currentBookTitle} · Ch ${ch.index}`;
           } else {
             audio.src = '';
             document.getElementById('btnDownloadMp3').style.display = 'none';
-            document.getElementById('listenBtnText').textContent = 'Synthesize & Play';
+            const listenTxt = document.getElementById('listenBtnText');
+            if (listenTxt) listenTxt.textContent = 'Synthesize & Play';
+            const pauseCtrl = document.getElementById('btnPauseAudioControl');
+            if (pauseCtrl) pauseCtrl.innerHTML = '▶ Synthesize & Play';
             document.getElementById('playerTrackTitle').textContent = `${currentBookTitle} · Ch ${ch.index} (Click ▶ to Narrate)`;
           }
         } else {
@@ -895,8 +959,13 @@
       container.innerHTML = '';
 
       paras.forEach((p, pIdx) => {
+        if (!p.text || !p.text.trim()) return;
+
         const pEl = document.createElement('div');
         pEl.className = 'paragraph-block';
+        if (p.text.length < 80 && (p.text.toUpperCase() === p.text || /^(Chapter|Part|Section)\b/i.test(p.text))) {
+          pEl.classList.add('reader-heading');
+        }
         pEl.id = `para-${pIdx}`;
         pEl.dataset.paraId = p.id;
         pEl.dataset.start = p.start || 0;
@@ -1034,10 +1103,20 @@
 
       audio.addEventListener('play', () => {
         document.getElementById('btnPlayPause').textContent = '⏸';
+        const pCtrl = document.getElementById('btnPauseAudioControl');
+        if (pCtrl) pCtrl.innerHTML = '⏸ Pause Audio';
       });
 
       audio.addEventListener('pause', () => {
         document.getElementById('btnPlayPause').textContent = '▶';
+        const pCtrl = document.getElementById('btnPauseAudioControl');
+        if (pCtrl) pCtrl.innerHTML = '▶ Resume Audio';
+      });
+
+      audio.addEventListener('ended', () => {
+        document.getElementById('btnPlayPause').textContent = '▶';
+        const pCtrl = document.getElementById('btnPauseAudioControl');
+        if (pCtrl) pCtrl.innerHTML = '▶ Play Audio';
       });
 
       audio.addEventListener('loadedmetadata', () => {
@@ -1118,10 +1197,8 @@
       }
       if (audio.paused) {
         audio.play();
-        document.getElementById('listenBtnText').textContent = 'Pause Audio';
       } else {
         audio.pause();
-        document.getElementById('listenBtnText').textContent = 'Resume Audio';
       }
     }
 
@@ -1205,7 +1282,10 @@
                 audio.play();
                 document.getElementById('btnDownloadMp3').href = pData.audioUrl;
                 document.getElementById('btnDownloadMp3').style.display = 'inline-flex';
-                document.getElementById('listenBtnText').textContent = 'Pause Audio';
+                const listenTxt = document.getElementById('listenBtnText');
+                if (listenTxt) listenTxt.textContent = 'Pause Audio';
+                const pCtrl = document.getElementById('btnPauseAudioControl');
+                if (pCtrl) pCtrl.innerHTML = '⏸ Pause Audio';
                 document.getElementById('playerTrackTitle').textContent = `${currentBookTitle} · Ch ${currentChapterIndex}`;
               }
             }

@@ -262,22 +262,34 @@ def _epub_title(soup, fallback_no: int) -> str:
 
 
 # --------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 # Markdown / TXT
 # --------------------------------------------------------------------------
 
-MD_HEADING_RE = re.compile(r"^(#{1,2})\s+(.+?)\s*$")
+MD_HEADING_RE = re.compile(r"^(#{1,4})\s+(.+?)\s*$")
+PAGE_LINE_RE = re.compile(r"^(?:page|p\.?)\s*\d+$", re.I)
+FIG_LINE_RE = re.compile(r"^(?:picture|fig|figure|table)\s*\d+", re.I)
+MAJOR_SECTION_RE = re.compile(
+    r"^(?:introduction|editor’s introduction|conclusion|epilogue|prologue|preface|afterword)\b",
+    re.I,
+)
 
 
 def extract_markdown(path: Path, cfg) -> Book:
     raw = path.read_text(encoding="utf-8", errors="replace")
+
+    # Strip HTML comments & raw base64 images upfront
+    raw = re.sub(r"<!--.*?-->", "", raw, flags=re.S)
+    raw = re.sub(r"!\[[^\]]*\]\(data:image\/[^)]+\)", "", raw)
+
+    first_h = _first_heading(raw)
     book = Book(
-        title=_first_heading(raw) or path.stem.replace("_", " ").title(),
+        title=first_h or path.stem.replace("_", " ").title(),
         author="Unknown author",
         source_path=str(path),
         source_format="md",
     )
-    # headings are detected (and stripped) inside _split_by_headings
-    _split_by_headings(book, raw.splitlines(), cfg, md_mode=True)
+    _split_markdown_by_chapters(book, raw, cfg)
     return book
 
 
@@ -295,18 +307,126 @@ def extract_txt(path: Path, cfg) -> Book:
 
 def _first_heading(raw: str) -> Optional[str]:
     for line in raw.splitlines():
-        m = MD_HEADING_RE.match(line)
+        m = MD_HEADING_RE.match(line.strip())
         if m:
-            return m.group(2).strip()[:80]
+            clean = re.sub(r"<[^>]+>", "", m.group(2)).strip()
+            if not PAGE_LINE_RE.match(clean) and not FIG_LINE_RE.match(clean):
+                return clean[:80]
     return None
 
 
 def strip_markdown_heading_lines(raw: str) -> List[str]:
     out: List[str] = []
     for line in raw.splitlines():
-        m = MD_HEADING_RE.match(line)
+        m = MD_HEADING_RE.match(line.strip())
         out.append(m.group(2) if m else line)
     return out
+
+
+def _merge_adjacent_heading_lines(lines: List[str]) -> List[str]:
+    """Merge OCR headings that were split over consecutive lines."""
+    merged: List[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        m = MD_HEADING_RE.match(line.strip())
+        if m:
+            lvl = m.group(1)
+            txt = re.sub(r"<[^>]+>", "", m.group(2)).strip()
+            if not PAGE_LINE_RE.match(txt) and not FIG_LINE_RE.match(txt):
+                combined_txt = txt
+                j = i + 1
+                while j < len(lines):
+                    if not lines[j].strip():
+                        j += 1
+                        continue
+                    next_m = MD_HEADING_RE.match(lines[j].strip())
+                    if next_m:
+                        next_txt = re.sub(r"<[^>]+>", "", next_m.group(2)).strip()
+                        if not PAGE_LINE_RE.match(next_txt) and not FIG_LINE_RE.match(next_txt):
+                            if len(combined_txt) < 45 or combined_txt.endswith(
+                                ("THE", "OF", "AND", "IN", "TO", "A", "AN", "SAYING", "NON-VERBAL", "FOR", "WITH")
+                            ):
+                                combined_txt = f"{combined_txt} {next_txt}"
+                                j += 1
+                                continue
+                    break
+                merged.append(f"{lvl} {combined_txt}")
+                i = j
+                continue
+        merged.append(line)
+        i += 1
+    return merged
+
+
+def _split_markdown_by_chapters(book: Book, raw: str, cfg) -> None:
+    lines = raw.splitlines()
+    lines = _merge_adjacent_heading_lines(lines)
+
+    skip_titles = {"contents", "table of contents", "index", "title page", "copyright", "and", "colophon"}
+
+    # Check if explicit 'Chapter N' headings exist in the document
+    has_explicit_chapters = False
+    for line in lines:
+        stripped = line.strip()
+        m = MD_HEADING_RE.match(stripped)
+        if m:
+            txt = re.sub(r"<[^>]+>", "", m.group(2)).strip()
+            if not PAGE_LINE_RE.match(txt) and CHAPTER_HEADING_RE.match(txt):
+                has_explicit_chapters = True
+                break
+
+    sections: List[Tuple[str, List[str]]] = []
+    current_title = book.title
+    current: List[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        m = MD_HEADING_RE.match(stripped)
+        if m:
+            level = len(m.group(1))
+            txt = re.sub(r"<[^>]+>", "", m.group(2)).strip(" .:–—#").strip()
+
+            # Ignore page markers and figure labels
+            if PAGE_LINE_RE.match(txt) or FIG_LINE_RE.match(txt):
+                continue
+
+            is_chapter_break = False
+            if has_explicit_chapters:
+                if CHAPTER_HEADING_RE.match(txt) or MAJOR_SECTION_RE.match(txt):
+                    is_chapter_break = True
+            else:
+                if level <= 3 and txt.lower() not in skip_titles:
+                    # Ignore standalone author names or short noise
+                    if len(txt) > 3 and not re.match(r"^(?:by|shân rees|roderick)\b", txt, re.I):
+                        is_chapter_break = True
+
+            if is_chapter_break:
+                if current:
+                    sections.append((current_title, current))
+                    current = []
+                current_title = txt
+                continue
+
+        current.append(line)
+
+    if current:
+        sections.append((current_title, current))
+
+    chapter_no = 0
+    lexicon = load_lexicon(cfg.get_path("lexicon.path"))
+    for title, block_lines in sections:
+        if _is_skip_chapter_title(title):
+            continue
+        block = "\n".join(block_lines)
+        paras = [p.strip() for p in re.split(r"\n\s*\n", block) if p.strip()]
+        if not paras:
+            continue
+        chapter_no += 1
+        chapter = Chapter(index=chapter_no, title=title)
+        _make_paragraphs(chapter, paras, cfg.get_path("extract.min_paragraph_chars", 25), lexicon=lexicon)
+        if chapter.paragraphs:
+            book.chapters.append(chapter)
 
 
 def _split_by_headings(book: Book, lines: List[str], cfg, md_mode: bool) -> None:

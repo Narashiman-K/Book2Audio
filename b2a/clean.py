@@ -15,13 +15,17 @@ except ImportError:
 log = logging.getLogger("b2a.clean")
 
 # --- regexes ---------------------------------------------------------------
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+_DATA_IMG_RE = re.compile(r"!\[[^\]]*\]\(data:image\/[^)]+\)")
 _CODE_FENCE_RE = re.compile(r"```.*?```", re.S)
 _IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
 _URL_RE = re.compile(r"(?:https?://|www\.)\S+")
 _FOOTNOTE_RE = re.compile(r"\[\d+\]|\{\d+\}|\[\d+[a-z]?\]")
 _MD_INLINE_RE = re.compile(r"(\*\*\*|\*\*|\*|__|_|`)")
 _MD_LIST_PREFIX_RE = re.compile(r"^\s{0,6}(?:[-*+]\s+|\d+[.)]\s+|>\s?|#{1,6}\s+)")
+_PAGE_LINE_RE = re.compile(r"^\s*#{0,6}\s*(?:page|p\.?)\s*\d+\s*$", re.I)
 _HYPHEN_WRAP_RE = re.compile(r"(\w+)-\n(\w+)")
 _WS_RE = re.compile(r"[ \t]+")
 _MULTI_NL_RE = re.compile(r"\n{3,}")
@@ -100,9 +104,12 @@ def is_boilerplate_paragraph(text: str) -> bool:
 
 def strip_markdown(text: str) -> str:
     """Markdown -> plain narration text."""
+    text = _HTML_COMMENT_RE.sub(" ", text)
+    text = _DATA_IMG_RE.sub(" ", text)
     text = _CODE_FENCE_RE.sub(" ", text)
     text = _IMAGE_RE.sub(" ", text)
     text = _LINK_RE.sub(r"\1", text)
+    text = _HTML_TAG_RE.sub(" ", text)
     text = _TABLE_LINE_RE.sub(" ", text)
     text = _MD_LIST_PREFIX_RE.sub("", text)
     text = _MD_INLINE_RE.sub("", text)
@@ -113,7 +120,11 @@ def clean_paragraph_text(text: str, lexicon: Optional[Dict[str, str]] = None) ->
     """One raw block -> clean, TTS-ready paragraph text."""
     if not text:
         return ""
+    if _PAGE_LINE_RE.match(text.strip()):
+        return ""
     text = strip_markdown(text)
+    if not text:
+        return ""
     text = _URL_RE.sub(" ", text)
     text = _FOOTNOTE_RE.sub("", text)
     for pattern, repl in _ABBREV_EXPANSIONS:
