@@ -1,61 +1,47 @@
-# Python
+# Models and weights
+models/
+*.onnx
+*.bin
+*.safetensors
+*.pt
+
+# Audio outputs and media
+output_kokoro/
+audition/
+*.mp3
+*.wav
+*.m4b
+*.aac
+
+# Python caches & virtual environments
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
-.venv/
-venv/
-ENV/
-env/
-
-# Test & coverage
 .pytest_cache/
 .coverage
 htmlcov/
+_backup_before_finetune/
+.venv/
+env/
+venv/
 
-# Local model weights (do not commit ~2GB models)
-models/
-models/*
+# Node & Frontend builds
+node_modules/
+dist/
+.next/
+out/
+build/
+*.tsbuildinfo
 
-# Generated audio outputs & cache
-output/
-output_kokoro/
-my_audiobooks/
-test_output/
-audition/
-_build/
-*.wav
-*.mp3
-*.m4a
-*.m4b
-*.ogg
-*.flac
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.code-workspace
+Thumbs.db
+.DS_Store
 
-# Archives & Voice Samples
-*.zip
-*.tar.gz
-*.tgz
-voice_samples/
-my_voice.*
-
-# Logs
-*.log
+# Temporary & agent artifacts
+.system_generated/
+.user_uploaded/
+*.tmp

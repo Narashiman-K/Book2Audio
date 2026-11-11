@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "book2audio Complete System Architecture",
+    "output": "architecture.html",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    { "id": "input_books", "type": "external", "label": "Source Books", "sublabel": "PDF / EPUB / MD / TXT", "pos": [40, 90], "size": [150, 60] },
+    { "id": "chrome_ext", "type": "frontend", "label": "Chrome Extension", "sublabel": "Manifest V3 Web-to-Audio", "pos": [40, 210], "size": [150, 60] },
+    { "id": "web_studio_ui", "type": "frontend", "label": "Book2Audio Studio", "sublabel": "Speed Reader & Player UI", "pos": [40, 330], "size": [150, 60] },
+
+    { "id": "py_extractor", "type": "backend", "label": "Doc & Web Extractor", "sublabel": "PyMuPDF, bs4, webread SSRF", "pos": [260, 130], "size": [170, 60] },
+    { "id": "clean_segment", "type": "backend", "label": "Text Normalizer", "sublabel": "clean.py / segment.py", "pos": [260, 230], "size": [170, 60] },
+    { "id": "ts_core_engine", "type": "backend", "label": "TS Parity Core", "sublabel": "@b2a/core & engine-node", "pos": [260, 330], "size": [170, 60] },
+
+    { "id": "rules_engine", "type": "backend", "label": "Prosody Rule Engine", "sublabel": "1.15x Pace, +4st, Dialogue", "pos": [500, 150], "size": [170, 60] },
+    { "id": "ollama_llm", "type": "backend", "label": "Ollama Prosody LLM", "sublabel": "Qwen2.5 / Llama 3 (Local)", "pos": [500, 250], "size": [170, 60] },
+    { "id": "markup_builder", "type": "backend", "label": "Markup & SSML Builder", "sublabel": "W3C SSML / SAPI / Plain", "pos": [500, 350], "size": [170, 60] },
+
+    { "id": "kokoro_tts", "type": "backend", "label": "Kokoro Neural TTS", "sublabel": "StyleTTS 2 ONNX (Primary)", "pos": [740, 70], "size": [170, 60] },
+    { "id": "winrt_tts", "type": "backend", "label": "WinRT Natural TTS", "sublabel": "Windows Ava / Jenny / Guy", "pos": [740, 160], "size": [170, 60] },
+    { "id": "xtts_engine", "type": "backend", "label": "XTTS v2 Voice Clone", "sublabel": "Local PyTorch Speaker Clone", "pos": [740, 250], "size": [170, 60] },
+    { "id": "piper_sapi", "type": "backend", "label": "Piper & SAPI Engines", "sublabel": "Fast ONNX & Windows Desktop", "pos": [740, 340], "size": [170, 60] },
+
+    { "id": "audio_dsp", "type": "backend", "label": "Studio DSP Pipeline", "sublabel": "EBU R128 Loudnorm + 90Hz", "pos": [980, 140], "size": [170, 60] },
+    { "id": "m4b_packager", "type": "backend", "label": "M4B Container Engine", "sublabel": "Lossless AAC + Cover Art", "pos": [980, 240], "size": [170, 60] },
+    { "id": "books_library", "type": "database", "label": "Books-Library Store", "sublabel": "Central Books, M4B & Cache", "pos": [980, 340], "size": [170, 60] },
+
+    { "id": "output_m4b", "type": "external", "label": "Mastered Audiobooks", "sublabel": "Chaptered M4B + 320k MP3", "pos": [1220, 140], "size": [160, 60] },
+    { "id": "speed_reader", "type": "frontend", "label": "Sync Speed Reader", "sublabel": "Word & Sentence Highlighting", "pos": [1220, 240], "size": [160, 60] },
+    { "id": "ts_apps", "type": "external", "label": "Multi-Platform Apps", "sublabel": "Next.js Web & Win Desktop", "pos": [1220, 340], "size": [160, 60] }
+  ],
+  "boundaries": [
+    { "kind": "security-group", "label": "Ingestion & Core Normalization Tier", "wraps": ["py_extractor", "clean_segment", "ts_core_engine"] },
+    { "kind": "security-group", "label": "Expressive Prosody Intelligence", "wraps": ["rules_engine", "ollama_llm", "markup_builder"] },
+    { "kind": "region", "label": "100% Offline Speech Synthesis Tier", "wraps": ["kokoro_tts", "winrt_tts", "xtts_engine", "piper_sapi"] },
+    { "kind": "security-group", "label": "Studio Mastering & Library Assembly", "wraps": ["audio_dsp", "m4b_packager", "books_library"] }
+  ],
+  "connections": [
+    { "id": "c1", "from": "input_books", "to": "py_extractor", "label": "parse docs" },
+    { "id": "c2", "from": "chrome_ext", "to": "py_extractor", "label": "webread SSRF" },
+    { "id": "c3", "from": "py_extractor", "to": "clean_segment", "label": "raw AST" },
+    { "id": "c4", "from": "clean_segment", "to": "ts_core_engine", "label": "test parity", "variant": "dashed" },
+    { "id": "c5", "from": "clean_segment", "to": "rules_engine", "label": "clean segments" },
+    { "id": "c6", "from": "clean_segment", "to": "ollama_llm", "label": "mood query", "variant": "dashed" },
+    { "id": "c7", "from": "ollama_llm", "to": "rules_engine", "label": "tone arc" },
+    { "id": "c8", "from": "rules_engine", "to": "markup_builder", "label": "ProsodyPlan" },
+    { "id": "c9", "from": "markup_builder", "to": "kokoro_tts", "label": "SSML" },
+    { "id": "c10", "from": "markup_builder", "to": "winrt_tts", "label": "natural XML" },
+    { "id": "c11", "from": "markup_builder", "to": "xtts_engine" },
+    { "id": "c12", "from": "markup_builder", "to": "piper_sapi" },
+    { "id": "c13", "from": "kokoro_tts", "to": "audio_dsp", "label": "24kHz WAV" },
+    { "id": "c14", "from": "winrt_tts", "to": "audio_dsp", "label": "audio stream" },
+    { "id": "c15", "from": "xtts_engine", "to": "audio_dsp" },
+    { "id": "c16", "from": "piper_sapi", "to": "audio_dsp" },
+    { "id": "c17", "from": "audio_dsp", "to": "m4b_packager", "label": "lossless master" },
+    { "id": "c18", "from": "audio_dsp", "to": "books_library", "label": "cache chunks", "variant": "dashed" },
+    { "id": "c19", "from": "m4b_packager", "to": "books_library", "label": "store m4b" },
+    { "id": "c20", "from": "m4b_packager", "to": "output_m4b", "label": "mastered file" },
+    { "id": "c21", "from": "books_library", "to": "speed_reader", "label": "audio + sync text" },
+    { "id": "c22", "from": "web_studio_ui", "to": "books_library", "label": "HTTP 206 stream", "variant": "dashed" },
+    { "id": "c23", "from": "ts_core_engine", "to": "ts_apps", "label": "monorepo build" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Zero-Cloud Ingestion & WebRead", "items": ["Native PyMuPDF for PDF and ebooklib for EPUB with automatic cover art extraction", "Security-hardened WebRead API blocking SSRF, private IPs, and cloud metadata", "Manifest V3 Chrome Extension enabling 1-click web article conversion to audio"] },
+    { "dot": "emerald", "title": "Expressive Prosody & Dual Engine", "items": ["Hybrid brain: deterministic rule engine with optional local Ollama LLM tone arc", "Calibrated user defaults: speed 1.15x, pitch +4 st, quote dialogue coloring", "Full TypeScript monorepo parity (@b2a/core, @b2a/engine-node, Web, Windows)"] },
+    { "dot": "amber", "title": "Kokoro Neural TTS & Voice Cloning", "items": ["Kokoro-82M (StyleTTS 2 ONNX) as primary neural voice engine with 54 studio voices", "WinRT Natural voices (Ava, Jenny, Guy) and Coqui XTTS v2 speaker voice cloning", "100% offline, local CPU/GPU synthesis without cloud tokens or data leakage"] },
+    { "dot": "violet", "title": "Studio Mastering & Speed Reading", "items": ["EBU R128 loudness normalization (-19 LUFS) and chaptered M4B container assembly", "Interactive Web Studio with sub-second word & sentence synchronized highlighting", "Unified Books-Library with instant playback, click-to-read seek, and live speed controls"] }
+  ]
+}

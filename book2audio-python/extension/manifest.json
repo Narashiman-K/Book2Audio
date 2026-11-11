@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Supras\u016bt\u0101 Read Aloud",
+  "version": "1.0.0",
+  "description": "Read any web page aloud with your local Book2Audio voice, with synced highlighting and read-from-selection.",
+  "icons": {"32": "icons/icon32.png", "128": "icons/icon128.png"},
+  "permissions": ["storage", "contextMenus", "activeTab", "scripting"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
+  "background": {"service_worker": "background.js"},
+  "action": {"default_title": "Read this page aloud", "default_popup": "popup.html", "default_icon": {"32": "icons/icon32.png"}},
+  "options_page": "options.html",
+  "content_scripts": [
+    {"matches": ["http://127.0.0.1/*", "http://localhost/*"], "js": ["pair.js"], "run_at": "document_idle"},
+    {"matches": ["http://*/*", "https://*/*"], "exclude_matches": ["http://127.0.0.1/*", "http://localhost/*"], "js": ["content.js"], "run_at": "document_idle"}
+  ]
+}

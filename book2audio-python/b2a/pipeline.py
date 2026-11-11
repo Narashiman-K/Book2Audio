@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from .audio import assemble_chapter, assemble_m4b, human_duration, probe_duration
+from .cover import find_cover
 from .config import Config
 from .extract import extract_book
 from .models import Book
@@ -29,6 +30,10 @@ from .segment import split_sentences
 from .tts.base import BaseTTS, ChunkJob
 
 log = logging.getLogger("b2a.pipeline")
+
+
+class BuildCancelled(Exception):
+    """Raised when the user stops a build; finished chapters are kept for resume."""
 
 
 def slugify(text: str) -> str:
@@ -64,6 +69,9 @@ class Pipeline:
         self.engine = engine
         self.out_root = Path(out_root)
         self.force: bool = False
+        # on_progress(fraction 0..1, message); should_stop() -> bool
+        self.on_progress: Optional[Callable[[float, str], None]] = None
+        self.should_stop: Callable[[], bool] = lambda: False
         self.prosody = self._make_prosody()
 
     def _make_prosody(self):
@@ -114,6 +122,8 @@ class Pipeline:
         m4b: bool = False,
         chapters: Optional[List[int]] = None,
         say=None,
+        meta: Optional[dict] = None,
+        cover: Optional[Path] = None,
     ) -> dict:
         say = say or (lambda m: None)
         self.force = force
@@ -137,16 +147,37 @@ class Pipeline:
 
         target_chapters = book.chapters
         if chapters:
-            target_chapters = [c for c in book.chapters if c.index in chapters]
+            wanted = {int(i) for i in chapters}
+            target_chapters = [c for c in book.chapters if c.index in wanted]
             if not target_chapters:
-                say(f"Warning: Requested chapter(s) {chapters} not found; available: 1..{len(book.chapters)}")
-                target_chapters = book.chapters[:1]
+                raise ValueError(
+                    f"None of the requested chapters {sorted(wanted)} exist; "
+                    f"this book has chapters 1..{len(book.chapters)}")
 
-        for chapter in target_chapters:
+        def emit(frac: float, msg: str):
+            if self.on_progress:
+                self.on_progress(max(0.0, min(1.0, frac)), msg)
+
+        weights = {c.index: max(1, sum(len(p.text) for p in c.paragraphs)) for c in target_chapters}
+        total_w = float(sum(weights.values()))
+        render_share = 0.90 if m4b else 1.0
+        done_w = 0.0
+        n_total = len(target_chapters)
+
+        for n_done, chapter in enumerate(target_chapters, start=1):
+            if self.should_stop():
+                raise BuildCancelled()
             out_name = f"{chapter.index:02d} - {_safe(chapter.title)}.mp3"
             out_path = out_book_dir / out_name
             ch_wav = build_dir / f"chapter_{chapter.index:02d}.wav"
-            if out_path.exists() and not force:
+            base_w = done_w
+
+            def ch_progress(f, msg, _base=base_w, _w=weights[chapter.index], _n=n_done):
+                emit(render_share * (_base + _w * f) / total_w,
+                     f"Chapter {_n}/{n_total}: {msg}")
+
+            self._ch_progress = ch_progress
+            if out_path.exists() and ch_wav.exists() and not force:
                 dur = probe_duration(out_path)
                 chapter_results.append({
                     "chapter": chapter.index, "title": chapter.title,
@@ -154,7 +185,9 @@ class Pipeline:
                     "wav_file": str(ch_wav) if ch_wav.exists() else None,
                     "seconds": dur, "skipped": True,
                 })
-                say(f"Chapter {chapter.index}: exists, skipped ({human_duration(dur)})")
+                say(f"Chapter {chapter.index}: already built, reusing ({human_duration(dur)})")
+                done_w += weights[chapter.index]
+                emit(render_share * done_w / total_w, f"Chapter {n_done}/{n_total}: already built")
                 continue
 
             t0 = time.time()
@@ -170,6 +203,8 @@ class Pipeline:
             })
             say(f"Chapter {chapter.index} '{chapter.title}': {n_paras} paragraphs -> "
                 f"{human_duration(dur)}  ({time.time() - t0:.1f}s)")
+            done_w += weights[chapter.index]
+            emit(render_share * done_w / total_w, f"Chapter {n_done}/{n_total} done")
 
         manifest = {
             "book": book.title,
@@ -188,33 +223,63 @@ class Pipeline:
             "elapsed_s": round(time.time() - total_t0, 1),
         }
         if m4b and chapter_results:
-            m4b_path = out_book_dir / f"{slugify(book.title)}.m4b"
-            # Discover cover image if present
-            cover_cand = None
-            explicit_cover = self.cfg.get_path("book.cover")
-            if explicit_cover and Path(explicit_cover).is_file():
-                cover_cand = Path(explicit_cover)
-            elif book.source_path:
-                src_dir = Path(book.source_path).parent
-                for name in ("cover.jpg", "cover.png", "cover.jpeg", "folder.jpg"):
-                    if (src_dir / name).is_file():
-                        cover_cand = src_dir / name
-                        break
-            if not cover_cand:
-                for name in ("cover.jpg", "cover.png", "cover.jpeg"):
-                    if Path(name).is_file():
-                        cover_cand = Path(name)
-                        break
+            if self.should_stop():
+                raise BuildCancelled()
+            idxs = [c["chapter"] for c in chapter_results]
+            slug = slugify(book.title)
+            full = len(idxs) == len(book.chapters)
+            if full:
+                m4b_path = out_book_dir / f"{slug}.m4b"
+            elif idxs == list(range(idxs[0], idxs[-1] + 1)):
+                m4b_path = out_book_dir / f"{slug} (ch {idxs[0]}-{idxs[-1]}).m4b"
+            else:
+                m4b_path = out_book_dir / f"{slug} (selected chapters).m4b"
 
-            say(f"Assembling M4B audiobook (direct lossless WAV -> AAC): {m4b_path.name} ...")
-            assemble_m4b(chapter_results, m4b_path, book.title, book.author,
-                         bitrate=bitrate, cover_image=cover_cand)
+            cover_cand = Path(cover) if cover and Path(cover).is_file() else None
+            if not cover_cand and book.source_path:
+                cover_cand = find_cover(Path(book.source_path), out_book_dir)
+
+            meta_full = {"title": book.title, "author": book.author,
+                         "narrator": f"Kokoro {self.engine.chosen_voice}"
+                                     if self.engine.name == "kokoro" else self.engine.chosen_voice}
+            meta_full.update({k: v for k, v in (meta or {}).items() if v not in (None, "")})
+            titles = (meta or {}).get("chapter_titles") or {}
+            for cr in chapter_results:
+                custom = titles.get(str(cr["chapter"]))
+                if custom:
+                    cr["title"] = custom
+
+            say(f"Assembling M4B: {m4b_path.name} ...")
+            marks: list = []
+            assemble_m4b(chapter_results, m4b_path, meta=meta_full, bitrate=bitrate,
+                         cover_image=cover_cand, marks_out=marks,
+                         progress_cb=lambda f: emit(0.90 + 0.10 * f, "Assembling M4B"))
             manifest["m4b_file"] = str(m4b_path)
             if cover_cand:
                 manifest["cover_image"] = str(cover_cand)
-                say(f"M4B audiobook ready with embedded cover art: {m4b_path.name}")
-            else:
-                say(f"M4B audiobook ready: {m4b_path.name}")
+
+            timeline = self._book_timeline(book, build_dir, chapter_results, marks, tempo)
+            sidecar = {
+                "version": 1,
+                "m4b": m4b_path.name,
+                "meta": meta_full,
+                "settings": {"voice": self.engine.chosen_voice,
+                             "speed": self.cfg.get_path("tts.kokoro.speed"),
+                             "pitch": self.cfg.get_path("tts.kokoro.pitch"),
+                             "bitrate": bitrate},
+                "cover": cover_cand.name if cover_cand else "",
+                "cover_path": str(cover_cand) if cover_cand else "",
+                "duration": marks[-1]["end"] if marks else 0,
+                "chapters": [dict(m, mp3=Path(cr["file"]).name)
+                             for m, cr in zip(marks, chapter_results)],
+                "timeline": timeline,
+                "built": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+            m4b_path.with_suffix(".b2a.json").write_text(
+                json.dumps(sidecar, indent=1, ensure_ascii=False), encoding="utf-8")
+            say(f"M4B ready: {m4b_path.name}"
+                + (" (with cover art)" if cover_cand else " (no cover found)"))
+            emit(1.0, "M4B ready")
 
         out_book_dir.mkdir(parents=True, exist_ok=True)
         (out_book_dir / "manifest.json").write_text(
@@ -233,9 +298,16 @@ class Pipeline:
 
         # ---- 1. prosody plan (cached) ----
         plan_path = build_dir / f"plan_c{chapter.index:02d}.json"
+        plan = None
         if plan_path.exists():
-            plan = json.loads(plan_path.read_text(encoding="utf-8"))
-        else:
+            try:
+                plan = json.loads(plan_path.read_text(encoding="utf-8"))
+                have = {p.get("para_id") for p in plan}
+                if not all(par.id in have for par in chapter.paragraphs):
+                    plan = None  # stale plan from a different chapter grouping
+            except Exception:
+                plan = None
+        if plan is None:
             if isinstance(self.prosody, OllamaProsody):
                 say(f"Chapter {chapter.index}: planning prosody with "
                     f"Ollama '{self.prosody.model}' ...")
@@ -289,7 +361,16 @@ class Pipeline:
         if jobs:
             say(f"Chapter {chapter.index}: synthesizing {len(jobs)} paragraphs "
                 f"with {self.engine.name}/{self.engine.chosen_voice} ...")
-            results = self.engine.synthesize_batch(jobs, chunks_dir)
+            results = []
+            step = 6
+            cp = getattr(self, "_ch_progress", None)
+            for i in range(0, len(jobs), step):
+                if self.should_stop():
+                    raise BuildCancelled()
+                results.extend(self.engine.synthesize_batch(jobs[i:i + step], chunks_dir))
+                if cp:
+                    cp(min(0.95, (i + step) / len(jobs)),
+                       f"narrating paragraph {min(i + step, len(jobs))}/{len(jobs)}")
             failed = [r for r in results if not r.ok]
             for r in failed:
                 log.error("chunk %s failed: %s", r.id, r.error)
@@ -351,6 +432,39 @@ class Pipeline:
         return out_path, ch_wav, len(chapter.paragraphs)
 
     # ------------------------------------------------------------------
+    def _book_timeline(self, book: Book, build_dir: Path, chapter_results: List[dict],
+                       marks: List[dict], tempo: float) -> dict:
+        """paragraph id -> [start, end] seconds inside the finished M4B."""
+        by_index = {c.index: c for c in book.chapters}
+        scale = 1.0 / tempo if tempo and abs(tempo - 1.0) > 0.01 else 1.0
+        out: dict = {}
+        for cr, mk in zip(chapter_results, marks):
+            ch = by_index.get(cr["chapter"])
+            if not ch:
+                continue
+            tl_path = build_dir / f"timeline_c{ch.index:02d}.json"
+            tl = None
+            if tl_path.exists():
+                try:
+                    tl = json.loads(tl_path.read_text(encoding="utf-8"))
+                except Exception:
+                    tl = None
+            have = {t["para_id"]: t for t in tl} if tl else {}
+            if tl and all(p.id in have for p in ch.paragraphs):
+                for p in ch.paragraphs:
+                    t = have[p.id]
+                    out[p.id] = [round(mk["start"] + t["start"] * scale, 2),
+                                 round(min(mk["end"], mk["start"] + t["end"] * scale), 2)]
+            else:  # no exact timings (older build): spread by characters
+                total = float(sum(len(p.text) for p in ch.paragraphs)) or 1.0
+                span = mk["end"] - mk["start"]
+                cur = mk["start"]
+                for p in ch.paragraphs:
+                    d = span * len(p.text) / total
+                    out[p.id] = [round(cur, 2), round(cur + d, 2)]
+                    cur += d
+        return out
+
     def _chunk_id(self, text: str, gpros: dict, seg) -> str:
         from .models import ProsodySegment
         if isinstance(seg, dict):

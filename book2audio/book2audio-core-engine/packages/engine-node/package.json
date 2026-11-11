@@ -1,0 +1,27 @@
+{
+  "name": "@b2a/engine-node",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "download-model": "node scripts/download-model.mjs"
+  },
+  "dependencies": {
+    "@b2a/core": "0.1.0",
+    "kokoro-js": "^1.2.1",
+    "@huggingface/transformers": "^3.5.1",
+    "pdfjs-dist": "^4.10.38"
+  },
+  "devDependencies": {
+    "pdf-lib": "^1.17.1"
+  }
+}

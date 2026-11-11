@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "ESNext", "moduleResolution": "Bundler",
+    "strict": true, "noUncheckedIndexedAccess": false, "skipLibCheck": true,
+    "declaration": true, "sourceMap": true, "esModuleInterop": true, "lib": ["ES2023", "DOM"]
+  }
+}

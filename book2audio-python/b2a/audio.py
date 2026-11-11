@@ -246,91 +246,217 @@ def assemble_chapter(
     return len(chapter) / 1000.0
 
 
+def _replace_file(src: Path, dst: Path) -> None:
+    """os.replace with retries: on Windows a player or browser may still hold the
+    old file open for a moment."""
+    import time
+    for attempt in range(8):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == 7:
+                raise RuntimeError(f"{dst.name} is in use by another program (a player?). "
+                                   "Close it and try again.")
+            time.sleep(1.0)
+
+
+def _ffmeta_escape(value: str) -> str:
+    """Escape a value for an FFMETADATA1 file (= ; # \\ and newline)."""
+    value = (value or "").replace("\r", " ")
+    return re.sub(r"([=;#\\\n])", r"\\\1", value)
+
+
+def _concat_line(path: Path) -> str:
+    p = Path(path).resolve().as_posix().replace("'", "'\\''")
+    return f"file '{p}'"
+
+
+def prepare_cover_jpeg(src: Path, dst: Path, max_px: int = 1400) -> Optional[Path]:
+    """Normalise any cover image (jpg/png/webp/gif) to a baseline JPEG that
+    every audiobook player accepts. Returns None if the image is unusable."""
+    try:
+        _run_ffmpeg([
+            "-i", str(src),
+            "-vf", f"scale='min({max_px},iw)':-2",
+            "-frames:v", "1", "-q:v", "2", "-pix_fmt", "yuvj420p",
+            str(dst),
+        ], timeout=60)
+        return dst if dst.is_file() and dst.stat().st_size > 0 else None
+    except Exception as e:
+        log.warning("cover image unusable (%s): %s", src, e)
+        return None
+
+
+def _meta_header(meta: dict) -> List[str]:
+    """Global FFMETADATA lines from a metadata dict.
+
+    Keys: title, author, narrator, album, year, genre, description, publisher.
+    Narrator goes in 'composer' (the convention Apple Books, Audiobookshelf and
+    VLC read); description goes in both 'description' and 'comment'.
+    """
+    title = meta.get("title") or "Audiobook"
+    author = meta.get("author") or ""
+    lines = [
+        ";FFMETADATA1",
+        f"title={_ffmeta_escape(title)}",
+        f"artist={_ffmeta_escape(author)}",
+        f"album_artist={_ffmeta_escape(author)}",
+        f"album={_ffmeta_escape(meta.get('album') or title)}",
+        f"genre={_ffmeta_escape(meta.get('genre') or 'Audiobook')}",
+        "media_type=2",
+    ]
+    if meta.get("narrator"):
+        lines.append(f"composer={_ffmeta_escape(meta['narrator'])}")
+    if meta.get("year"):
+        lines.append(f"date={_ffmeta_escape(str(meta['year']))}")
+    if meta.get("publisher"):
+        lines.append(f"publisher={_ffmeta_escape(meta['publisher'])}")
+    desc = meta.get("description") or "Made with book2audio - personal/family use only"
+    lines.append(f"description={_ffmeta_escape(desc)}")
+    lines.append(f"comment={_ffmeta_escape(desc)}")
+    return lines
+
+
+def _chapter_lines(marks: List[dict]) -> List[str]:
+    out: List[str] = []
+    for m in marks:
+        out += ["[CHAPTER]", "TIMEBASE=1/1000",
+                f"START={int(round(m['start'] * 1000))}",
+                f"END={int(round(m['end'] * 1000))}",
+                f"title={_ffmeta_escape(m['title'])}", ""]
+    return out
+
+
+def compute_chapter_marks(chapter_files: List[dict]) -> Tuple[List[dict], List[Path]]:
+    """Chapter start/end in seconds, measured from the exact files that will be
+    concatenated (never from the MP3 duration, which differs by encoder padding
+    and made chapter markers drift)."""
+    use_wav = all(ch.get("wav_file") and Path(ch["wav_file"]).is_file() for ch in chapter_files)
+    marks: List[dict] = []
+    sources: List[Path] = []
+    cur = 0.0
+    for ch in chapter_files:
+        src = Path(ch["wav_file"] if use_wav else ch["file"])
+        dur = probe_duration(src)
+        if dur <= 0:
+            raise RuntimeError(f"cannot read duration of {src.name}")
+        title = ch.get("title") or f"Chapter {ch.get('chapter', '')}"
+        marks.append({"index": ch.get("chapter"), "title": re.sub(r"<[^>]+>", "", title).strip(),
+                      "start": round(cur, 3), "end": round(cur + dur, 3)})
+        sources.append(src)
+        cur += dur
+    return marks, sources
+
+
 def assemble_m4b(
     chapter_files: List[dict],
     out_m4b: Path,
-    book_title: str,
-    author: str,
+    book_title: str = "",
+    author: str = "",
     bitrate: str = "96k",
     cover_image: Optional[Path] = None,
+    meta: Optional[dict] = None,
+    marks_out: Optional[list] = None,
+    progress_cb=None,
 ) -> Path:
-    """Concatenate chapter audio into a single chaptered .m4b (AAC) container.
+    """Concatenate chapter audio into one chaptered .m4b (AAC in an ipod/MP4 muxer).
 
-    Prefers lossless chapter WAV files when available to avoid MP3 transcoding degradation.
-    Optionally embeds cover artwork.
+    - chapter markers are measured from the real source files
+    - cover art is normalised to JPEG and attached
+    - tags: title, author, narrator (composer), year, genre, description
+    - written to a temp file and moved into place, so a failed or cancelled
+      build never leaves a half-written .m4b behind
     """
     if not chapter_files:
         raise ValueError("no chapters to assemble into M4B")
 
+    meta = dict(meta or {})
+    meta.setdefault("title", book_title)
+    meta.setdefault("author", author)
+
+    marks, sources = compute_chapter_marks(chapter_files)
+    if marks_out is not None:
+        marks_out[:] = marks
+    total = marks[-1]["end"]
+
+    out_m4b = Path(out_m4b)
+    out_m4b.parent.mkdir(parents=True, exist_ok=True)
+    tmp_out = out_m4b.with_name(out_m4b.stem + ".partial.m4b")
+
     with tempfile.TemporaryDirectory() as td:
-        concat_list = Path(td) / "concat.txt"
-        meta_file = Path(td) / "metadata.txt"
-
-        lines = []
-        for ch in chapter_files:
-            # Prefer pristine WAV if it exists, fallback to MP3
-            src = ch.get("wav_file") or ch.get("file")
-            if not src or not Path(src).exists():
-                src = ch.get("file")
-            p = Path(src).resolve().as_posix()
-            lines.append(f"file '{p}'")
-        concat_list.write_text("\n".join(lines), encoding="utf-8")
-
-        meta_lines = [
-            ";FFMETADATA1",
-            f"title={book_title}",
-            f"artist={author}",
-            f"album={book_title}",
-            "genre=Audiobook",
-            "comment=Made with book2audio - personal/family use only",
-            "",
-        ]
-
-        current_ms = 0
-        for ch in chapter_files:
-            dur_ms = int(round(float(ch.get("seconds") or 0.0) * 1000))
-            end_ms = current_ms + dur_ms
-            clean_title = ch.get("title") or f"Chapter {ch.get('chapter', '')}"
-            meta_lines.extend([
-                "[CHAPTER]",
-                "TIMEBASE=1/1000",
-                f"START={current_ms}",
-                f"END={end_ms}",
-                f"title={clean_title}",
-                "",
-            ])
-            current_ms = end_ms
-
-        meta_file.write_text("\n".join(meta_lines), encoding="utf-8")
-
-        cmd = [
-            "-f", "concat",
-            "-safe", "0",
-            "-i", str(concat_list),
-            "-i", str(meta_file),
-        ]
-
+        td = Path(td)
+        (td / "concat.txt").write_text("\n".join(_concat_line(p) for p in sources), encoding="utf-8")
+        (td / "meta.txt").write_text("\n".join(_meta_header(meta) + [""] + _chapter_lines(marks)),
+                                     encoding="utf-8")
+        cover_jpg = None
         if cover_image and Path(cover_image).is_file():
-            cmd.extend(["-i", str(Path(cover_image).resolve())])
-            cmd.extend([
-                "-map", "0:a",
-                "-map", "2:v",
-                "-c:v", "copy",
-                "-disposition:v:0", "attached_pic",
-            ])
+            cover_jpg = prepare_cover_jpeg(Path(cover_image), td / "cover.jpg")
+
+        args = ["-f", "concat", "-safe", "0", "-i", str(td / "concat.txt"),
+                "-i", str(td / "meta.txt")]
+        if cover_jpg:
+            args += ["-i", str(cover_jpg), "-map", "0:a", "-map", "2:v", "-c:v", "copy",
+                     "-disposition:v:0", "attached_pic"]
         else:
-            cmd.extend(["-map", "0:a", "-vn"])
+            args += ["-map", "0:a", "-vn"]
+        args += ["-map_metadata", "1", "-map_chapters", "1",
+                 "-c:a", "aac", "-b:a", bitrate, "-ac", "1",
+                 "-metadata:s:a:0", "language=eng",
+                 "-movflags", "+faststart", "-f", "ipod", str(tmp_out)]
 
-        cmd.extend([
-            "-map_metadata", "1",
-            "-c:a", "aac",
-            "-b:a", bitrate,
-            str(out_m4b),
-        ])
+        cmd = [find_ffmpeg(), "-hide_banner", "-loglevel", "error", "-nostats",
+               "-progress", "pipe:1", "-y"] + args
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, bufsize=1)
+        try:
+            for line in proc.stdout:  # type: ignore[union-attr]
+                if line.startswith("out_time_us=") and progress_cb and total > 0:
+                    try:
+                        progress_cb(min(1.0, int(line.split("=")[1]) / 1e6 / total))
+                    except ValueError:
+                        pass
+            err = proc.stderr.read()  # type: ignore[union-attr]
+            rc = proc.wait(timeout=60)
+        except Exception:
+            proc.kill()
+            tmp_out.unlink(missing_ok=True)
+            raise
+        if rc != 0 or not tmp_out.is_file() or tmp_out.stat().st_size == 0:
+            tmp_out.unlink(missing_ok=True)
+            raise RuntimeError(f"ffmpeg could not build the M4B (rc={rc}): {(err or '').strip()[-800:]}")
 
-        _run_ffmpeg(cmd)
-
+    _replace_file(tmp_out, out_m4b)
     return out_m4b
+
+
+def retag_m4b(m4b: Path, meta: dict, marks: List[dict], cover_image: Optional[Path] = None) -> Path:
+    """Rewrite tags, chapter titles and cover on an existing .m4b WITHOUT
+    re-encoding (stream copy, takes a second or two)."""
+    m4b = Path(m4b)
+    tmp_out = m4b.with_name(m4b.stem + ".retag.m4b")
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        (td / "meta.txt").write_text("\n".join(_meta_header(meta) + [""] + _chapter_lines(marks)),
+                                     encoding="utf-8")
+        cover_jpg = None
+        if cover_image and Path(cover_image).is_file():
+            cover_jpg = prepare_cover_jpeg(Path(cover_image), td / "cover.jpg")
+        args = ["-i", str(m4b), "-i", str(td / "meta.txt")]
+        if cover_jpg:
+            args += ["-i", str(cover_jpg), "-map", "0:a", "-map", "2:v", "-c:v", "copy",
+                     "-disposition:v:0", "attached_pic"]
+        else:
+            args += ["-map", "0:a", "-map", "0:v?", "-c:v", "copy"]  # keep existing cover
+        args += ["-map_metadata", "1", "-map_chapters", "1", "-c:a", "copy",
+                 "-movflags", "+faststart", "-f", "ipod", str(tmp_out)]
+        try:
+            _run_ffmpeg(args, timeout=600)
+        except Exception:
+            tmp_out.unlink(missing_ok=True)
+            raise
+    _replace_file(tmp_out, m4b)
+    return m4b
 
 
 def probe_duration(path: Path) -> float:

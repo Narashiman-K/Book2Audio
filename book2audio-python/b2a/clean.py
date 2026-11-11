@@ -86,7 +86,8 @@ def apply_lexicon(text: str, lexicon: Dict[str, str]) -> str:
         return text
     for word, replacement in lexicon.items():
         # Escape for regex and ensure word boundaries
-        pattern = rf"\b{re.escape(word)}\b"
+        # (?<!\w)/(?!\w) instead of \b: a plain \b never matches after a trailing "." (so "et al.," was skipped)
+        pattern = rf"(?<!\w){re.escape(word)}(?!\w)"
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE if word.isupper() else 0)
     return text
 

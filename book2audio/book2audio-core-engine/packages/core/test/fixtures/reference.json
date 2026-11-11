@@ -1,0 +1,926 @@
+{
+ "lexicon": {
+  "AI": "A.I.",
+  "API": "A.P.I.",
+  "Naval": "Nuh-vaal",
+  "Ravikant": "Rah-vee-kaant",
+  "Bhagavad Gita": "Bhag-avad Geeta",
+  "Upanishads": "Oo-pani-shads",
+  "dharma": "dhar-ma",
+  "karma": "kar-ma",
+  "Sanskrit": "Sans-krit",
+  "et al.": "and others"
+ },
+ "power_words": [
+  "never",
+  "always",
+  "must",
+  "dream",
+  "believe",
+  "hope",
+  "heart",
+  "truth",
+  "love",
+  "begin",
+  "begin(begins)",
+  "courage",
+  "light",
+  "freedom",
+  "home",
+  "today",
+  "forever",
+  "journey",
+  "remember",
+  "promise"
+ ],
+ "max_emph": 2,
+ "clean": [
+  {
+   "in": "## Chapter 1\n",
+   "out": "Chapter 1",
+   "out_nolex": "Chapter 1"
+  },
+  {
+   "in": "Dr. Smith met Mr. Jones at 3.5 p.m. in St. Paul, e.g., near the park. He said: \"Never give up!\" and left.",
+   "out": "Doctor Smith met Mister Jones at 3.5 p.m. in Saint Paul, for example, near the park. He said: \"Never give up!\" and left.",
+   "out_nolex": "Doctor Smith met Mister Jones at 3.5 p.m. in Saint Paul, for example, near the park. He said: \"Never give up!\" and left."
+  },
+  {
+   "in": "The **bold** idea, [linked text](http://x.com), and a footnote[12] with a URL https://example.com/a?b=1 here.",
+   "out": "The bold idea, linked text, and a footnote with a URL here.",
+   "out_nolex": "The bold idea, linked text, and a footnote with a URL here."
+  },
+  {
+   "in": "word-\nwrap should join; semicolons become commas — and dashes too.",
+   "out": "wordwrap should join, semicolons become commas, and dashes too.",
+   "out_nolex": "wordwrap should join, semicolons become commas, and dashes too."
+  },
+  {
+   "in": "Page 42",
+   "out": "",
+   "out_nolex": ""
+  },
+  {
+   "in": "All rights reserved. ISBN 978-3-16-148410-0",
+   "out": "",
+   "out_nolex": ""
+  },
+  {
+   "in": "Contents",
+   "out": "",
+   "out_nolex": ""
+  },
+  {
+   "in": "Introduction .......... 15",
+   "out": "",
+   "out_nolex": ""
+  },
+  {
+   "in": "AI and the API of Naval Ravikant explore dharma, karma and the Bhagavad Gita.",
+   "out": "A.I. and the A.P.I. of Nuh-vaal Rah-vee-kaant explore dhar-ma, kar-ma and the Bhag-avad Geeta.",
+   "out_nolex": "AI and the API of Naval Ravikant explore dharma, karma and the Bhagavad Gita."
+  },
+  {
+   "in": "1234 5678 9012 3456 7890",
+   "out": "",
+   "out_nolex": ""
+  },
+  {
+   "in": "She wondered... was it truly the best way? Nobody knew. The silence grew... and grew.",
+   "out": "She wondered... was it truly the best way? Nobody knew. The silence grew... and grew.",
+   "out_nolex": "She wondered... was it truly the best way? Nobody knew. The silence grew... and grew."
+  },
+  {
+   "in": "THE END IS NEAR, but we must never stop believing in the truth of our heart.",
+   "out": "THE END IS NEAR, but we must never stop believing in the truth of our heart.",
+   "out_nolex": "THE END IS NEAR, but we must never stop believing in the truth of our heart."
+  },
+  {
+   "in": "This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, ending quietly.",
+   "out": "This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, ending quietly.",
+   "out_nolex": "This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, ending quietly."
+  },
+  {
+   "in": "- list item one\n- list item two",
+   "out": "list item one - list item two",
+   "out_nolex": "list item one - list item two"
+  },
+  {
+   "in": "He asked, \"Are you coming?\" She replied, \"Yes, I am coming tonight.\"",
+   "out": "He asked, \"Are you coming?\" She replied, \"Yes, I am coming tonight.\"",
+   "out_nolex": "He asked, \"Are you coming?\" She replied, \"Yes, I am coming tonight.\""
+  },
+  {
+   "in": "Café owners in Zürich: etc. vs. the rest, see Fig. 3 for details.",
+   "out": "Café owners in Zürich: etcetera versus the rest, see Figure 3 for details.",
+   "out_nolex": "Café owners in Zürich: etcetera versus the rest, see Figure 3 for details."
+  }
+ ],
+ "sentences": [
+  {
+   "in": "Mr. Brown paid $3.50 for it. He left at 5 p.m. Then he came back... slowly. Really? Yes! Done.",
+   "out": [
+    "Mr. Brown paid $3.50 for it.",
+    "He left at 5 p.m. Then he came back... slowly.",
+    "Really?",
+    "Yes!",
+    "Done."
+   ],
+   "out_60": [
+    "Mr. Brown paid $3.50 for it.",
+    "He left at 5 p.m. Then he came back... slowly.",
+    "Really?",
+    "Yes!",
+    "Done."
+   ]
+  },
+  {
+   "in": "J. R. R. Tolkien wrote it, e.g. in 1954. The end.",
+   "out": [
+    "J. R. R. Tolkien wrote it, e.g. in 1954.",
+    "The end."
+   ],
+   "out_60": [
+    "J. R. R. Tolkien wrote it, e.g. in 1954.",
+    "The end."
+   ]
+  },
+  {
+   "in": "A very long sentence with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; and finally ends.",
+   "out": [
+    "A very long sentence with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses,",
+    "but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses, but it keeps going; with many clauses,",
+    "but it keeps going; and finally ends."
+   ],
+   "out_60": [
+    "A very long sentence with many clauses, but it keeps going;",
+    "with many clauses, but it keeps going; with many clauses,",
+    "but it keeps going; with many clauses, but it keeps going;",
+    "with many clauses, but it keeps going; with many clauses,",
+    "but it keeps going; with many clauses, but it keeps going;",
+    "with many clauses, but it keeps going; with many clauses,",
+    "but it keeps going; with many clauses, but it keeps going;",
+    "with many clauses, but it keeps going; with many clauses,",
+    "but it keeps going; with many clauses, but it keeps going;",
+    "with many clauses, but it keeps going; with many clauses,",
+    "but it keeps going; with many clauses, but it keeps going;",
+    "with many clauses, but it keeps going; with many clauses,",
+    "but it keeps going; with many clauses, but it keeps going;",
+    "with many clauses, but it keeps going; and finally ends."
+   ]
+  },
+  {
+   "in": "No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words ",
+   "out": [
+    "No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No",
+    "punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No",
+    "punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words"
+   ],
+   "out_60": [
+    "No punctuation at all just words No punctuation at all just",
+    "words No punctuation at all just words No punctuation at all",
+    "just words No punctuation at all just words No punctuation",
+    "at all just words No punctuation at all just words No",
+    "punctuation at all just words No punctuation at all just",
+    "words No punctuation at all just words No punctuation at all",
+    "just words No punctuation at all just words No punctuation",
+    "at all just words No punctuation at all just words No",
+    "punctuation at all just words No punctuation at all just",
+    "words No punctuation at all just words No punctuation at all",
+    "just words No punctuation at all just words No punctuation",
+    "at all just words No punctuation at all just words No",
+    "punctuation at all just words No punctuation at all just",
+    "words No punctuation at all just words No punctuation at all",
+    "just words No punctuation at all just words No punctuation",
+    "at all just words No punctuation at all just words No",
+    "punctuation at all just words No punctuation at all just",
+    "words"
+   ]
+  },
+  {
+   "in": "Quote: \"Stop.\" He said so. (Really.) Okay.",
+   "out": [
+    "Quote: \"Stop.\"",
+    "He said so.",
+    "(Really.)",
+    "Okay."
+   ],
+   "out_60": [
+    "Quote: \"Stop.\"",
+    "He said so.",
+    "(Really.)",
+    "Okay."
+   ]
+  }
+ ],
+ "rules": {
+  "warm": [
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "Chapter 1"
+   },
+   {
+    "para_id": "p",
+    "mood": "dialogue",
+    "emphasis": [
+     "never",
+     "Never give up!"
+    ],
+    "rate_delta": 0,
+    "pitch_delta": 2,
+    "pause_after_ms": 550,
+    "source": "rules",
+    "text": "Doctor Smith met Mister Jones at 3.5 p.m. in Saint Paul, for example, near the park. He said: \"Never give up!\" and left."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "The bold idea, linked text, and a footnote with a URL here."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "wordwrap should join, semicolons become commas, and dashes too."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "AI and the API of Naval Ravikant explore dharma, karma and the Bhagavad Gita."
+   },
+   {
+    "para_id": "p",
+    "mood": "reflective",
+    "emphasis": [
+     "best"
+    ],
+    "rate_delta": -4,
+    "pitch_delta": 0,
+    "pause_after_ms": 800,
+    "source": "rules",
+    "text": "She wondered... was it truly the best way? Nobody knew. The silence grew... and grew."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [
+     "NEAR",
+     "never",
+     "truth"
+    ],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "THE END IS NEAR, but we must never stop believing in the truth of our heart."
+   },
+   {
+    "para_id": "p",
+    "mood": "reflective",
+    "emphasis": [],
+    "rate_delta": -4,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, ending quietly."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "list item one - list item two"
+   },
+   {
+    "para_id": "p",
+    "mood": "dialogue",
+    "emphasis": [
+     "Are you coming?"
+    ],
+    "rate_delta": 0,
+    "pitch_delta": 2,
+    "pause_after_ms": 550,
+    "source": "rules",
+    "text": "He asked, \"Are you coming?\" She replied, \"Yes, I am coming tonight.\""
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "Café owners in Zürich: etcetera versus the rest, see Figure 3 for details."
+   },
+   {
+    "para_id": "p",
+    "mood": "excited",
+    "emphasis": [],
+    "rate_delta": 4,
+    "pitch_delta": 3,
+    "pause_after_ms": 800,
+    "source": "rules",
+    "text": "Mister Brown paid $3.50 for it. He left at 5 p.m. Then he came back... slowly. Really? Yes! Done."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "J. R. R. Tolkien wrote it, for example, in 1954. The end."
+   },
+   {
+    "para_id": "p",
+    "mood": "reflective",
+    "emphasis": [
+     "but"
+    ],
+    "rate_delta": -4,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "A very long sentence with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, and finally ends."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words"
+   },
+   {
+    "para_id": "p",
+    "mood": "dialogue",
+    "emphasis": [
+     "Stop."
+    ],
+    "rate_delta": 0,
+    "pitch_delta": 2,
+    "pause_after_ms": 550,
+    "source": "rules",
+    "text": "Quote: \"Stop.\" He said so. (Really.) Okay."
+   }
+  ],
+  "motivational": [
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 4,
+    "pitch_delta": 2,
+    "pause_after_ms": 294,
+    "source": "rules",
+    "text": "Chapter 1"
+   },
+   {
+    "para_id": "p",
+    "mood": "dialogue",
+    "emphasis": [
+     "never",
+     "Never give up!"
+    ],
+    "rate_delta": 4,
+    "pitch_delta": 4,
+    "pause_after_ms": 385,
+    "source": "rules",
+    "text": "Doctor Smith met Mister Jones at 3.5 p.m. in Saint Paul, for example, near the park. He said: \"Never give up!\" and left."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 4,
+    "pitch_delta": 2,
+    "pause_after_ms": 294,
+    "source": "rules",
+    "text": "The bold idea, linked text, and a footnote with a URL here."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 4,
+    "pitch_delta": 2,
+    "pause_after_ms": 294,
+    "source": "rules",
+    "text": "wordwrap should join, semicolons become commas, and dashes too."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 4,
+    "pitch_delta": 2,
+    "pause_after_ms": 294,
+    "source": "rules",
+    "text": "AI and the API of Naval Ravikant explore dharma, karma and the Bhagavad Gita."
+   },
+   {
+    "para_id": "p",
+    "mood": "reflective",
+    "emphasis": [
+     "best"
+    ],
+    "rate_delta": 0,
+    "pitch_delta": 2,
+    "pause_after_ms": 560,
+    "source": "rules",
+    "text": "She wondered... was it truly the best way? Nobody knew. The silence grew... and grew."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [
+     "NEAR",
+     "never",
+     "truth"
+    ],
+    "rate_delta": 4,
+    "pitch_delta": 2,
+    "pause_after_ms": 294,
+    "source": "rules",
+    "text": "THE END IS NEAR, but we must never stop believing in the truth of our heart."
+   },
+   {
+    "para_id": "p",
+    "mood": "reflective",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 2,
+    "pause_after_ms": 294,
+    "source": "rules",
+    "text": "This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, ending quietly."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 4,
+    "pitch_delta": 2,
+    "pause_after_ms": 294,
+    "source": "rules",
+    "text": "list item one - list item two"
+   },
+   {
+    "para_id": "p",
+    "mood": "dialogue",
+    "emphasis": [
+     "Are you coming?"
+    ],
+    "rate_delta": 4,
+    "pitch_delta": 4,
+    "pause_after_ms": 385,
+    "source": "rules",
+    "text": "He asked, \"Are you coming?\" She replied, \"Yes, I am coming tonight.\""
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 4,
+    "pitch_delta": 2,
+    "pause_after_ms": 294,
+    "source": "rules",
+    "text": "Café owners in Zürich: etcetera versus the rest, see Figure 3 for details."
+   },
+   {
+    "para_id": "p",
+    "mood": "excited",
+    "emphasis": [],
+    "rate_delta": 8,
+    "pitch_delta": 5,
+    "pause_after_ms": 560,
+    "source": "rules",
+    "text": "Mister Brown paid $3.50 for it. He left at 5 p.m. Then he came back... slowly. Really? Yes! Done."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 4,
+    "pitch_delta": 2,
+    "pause_after_ms": 294,
+    "source": "rules",
+    "text": "J. R. R. Tolkien wrote it, for example, in 1954. The end."
+   },
+   {
+    "para_id": "p",
+    "mood": "reflective",
+    "emphasis": [
+     "but"
+    ],
+    "rate_delta": 0,
+    "pitch_delta": 2,
+    "pause_after_ms": 294,
+    "source": "rules",
+    "text": "A very long sentence with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, and finally ends."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 4,
+    "pitch_delta": 2,
+    "pause_after_ms": 294,
+    "source": "rules",
+    "text": "No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words"
+   },
+   {
+    "para_id": "p",
+    "mood": "dialogue",
+    "emphasis": [
+     "Stop."
+    ],
+    "rate_delta": 4,
+    "pitch_delta": 4,
+    "pause_after_ms": 385,
+    "source": "rules",
+    "text": "Quote: \"Stop.\" He said so. (Really.) Okay."
+   }
+  ],
+  "storyteller": [
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": -2,
+    "pitch_delta": 0,
+    "pause_after_ms": 525,
+    "source": "rules",
+    "text": "Chapter 1"
+   },
+   {
+    "para_id": "p",
+    "mood": "dialogue",
+    "emphasis": [
+     "never",
+     "Never give up!"
+    ],
+    "rate_delta": -2,
+    "pitch_delta": 2,
+    "pause_after_ms": 687,
+    "source": "rules",
+    "text": "Doctor Smith met Mister Jones at 3.5 p.m. in Saint Paul, for example, near the park. He said: \"Never give up!\" and left."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": -2,
+    "pitch_delta": 0,
+    "pause_after_ms": 525,
+    "source": "rules",
+    "text": "The bold idea, linked text, and a footnote with a URL here."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": -2,
+    "pitch_delta": 0,
+    "pause_after_ms": 525,
+    "source": "rules",
+    "text": "wordwrap should join, semicolons become commas, and dashes too."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": -2,
+    "pitch_delta": 0,
+    "pause_after_ms": 525,
+    "source": "rules",
+    "text": "AI and the API of Naval Ravikant explore dharma, karma and the Bhagavad Gita."
+   },
+   {
+    "para_id": "p",
+    "mood": "reflective",
+    "emphasis": [
+     "best"
+    ],
+    "rate_delta": -6,
+    "pitch_delta": 0,
+    "pause_after_ms": 1000,
+    "source": "rules",
+    "text": "She wondered... was it truly the best way? Nobody knew. The silence grew... and grew."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [
+     "NEAR",
+     "never",
+     "truth"
+    ],
+    "rate_delta": -2,
+    "pitch_delta": 0,
+    "pause_after_ms": 525,
+    "source": "rules",
+    "text": "THE END IS NEAR, but we must never stop believing in the truth of our heart."
+   },
+   {
+    "para_id": "p",
+    "mood": "reflective",
+    "emphasis": [],
+    "rate_delta": -6,
+    "pitch_delta": 0,
+    "pause_after_ms": 525,
+    "source": "rules",
+    "text": "This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, ending quietly."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": -2,
+    "pitch_delta": 0,
+    "pause_after_ms": 525,
+    "source": "rules",
+    "text": "list item one - list item two"
+   },
+   {
+    "para_id": "p",
+    "mood": "dialogue",
+    "emphasis": [
+     "Are you coming?"
+    ],
+    "rate_delta": -2,
+    "pitch_delta": 2,
+    "pause_after_ms": 687,
+    "source": "rules",
+    "text": "He asked, \"Are you coming?\" She replied, \"Yes, I am coming tonight.\""
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": -2,
+    "pitch_delta": 0,
+    "pause_after_ms": 525,
+    "source": "rules",
+    "text": "Café owners in Zürich: etcetera versus the rest, see Figure 3 for details."
+   },
+   {
+    "para_id": "p",
+    "mood": "excited",
+    "emphasis": [],
+    "rate_delta": 2,
+    "pitch_delta": 3,
+    "pause_after_ms": 1000,
+    "source": "rules",
+    "text": "Mister Brown paid $3.50 for it. He left at 5 p.m. Then he came back... slowly. Really? Yes! Done."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": -2,
+    "pitch_delta": 0,
+    "pause_after_ms": 525,
+    "source": "rules",
+    "text": "J. R. R. Tolkien wrote it, for example, in 1954. The end."
+   },
+   {
+    "para_id": "p",
+    "mood": "reflective",
+    "emphasis": [
+     "but"
+    ],
+    "rate_delta": -6,
+    "pitch_delta": 0,
+    "pause_after_ms": 525,
+    "source": "rules",
+    "text": "A very long sentence with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, and finally ends."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": -2,
+    "pitch_delta": 0,
+    "pause_after_ms": 525,
+    "source": "rules",
+    "text": "No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words"
+   },
+   {
+    "para_id": "p",
+    "mood": "dialogue",
+    "emphasis": [
+     "Stop."
+    ],
+    "rate_delta": -2,
+    "pitch_delta": 2,
+    "pause_after_ms": 687,
+    "source": "rules",
+    "text": "Quote: \"Stop.\" He said so. (Really.) Okay."
+   }
+  ],
+  "minimal": [
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "Chapter 1"
+   },
+   {
+    "para_id": "p",
+    "mood": "dialogue",
+    "emphasis": [
+     "never",
+     "Never give up!"
+    ],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 550,
+    "source": "rules",
+    "text": "Doctor Smith met Mister Jones at 3.5 p.m. in Saint Paul, for example, near the park. He said: \"Never give up!\" and left."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "The bold idea, linked text, and a footnote with a URL here."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "wordwrap should join, semicolons become commas, and dashes too."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "AI and the API of Naval Ravikant explore dharma, karma and the Bhagavad Gita."
+   },
+   {
+    "para_id": "p",
+    "mood": "reflective",
+    "emphasis": [
+     "best"
+    ],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 800,
+    "source": "rules",
+    "text": "She wondered... was it truly the best way? Nobody knew. The silence grew... and grew."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [
+     "NEAR",
+     "never",
+     "truth"
+    ],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "THE END IS NEAR, but we must never stop believing in the truth of our heart."
+   },
+   {
+    "para_id": "p",
+    "mood": "reflective",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, This is a long reflective paragraph that goes on and on without any exclamation, ending quietly."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "list item one - list item two"
+   },
+   {
+    "para_id": "p",
+    "mood": "dialogue",
+    "emphasis": [
+     "Are you coming?"
+    ],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 550,
+    "source": "rules",
+    "text": "He asked, \"Are you coming?\" She replied, \"Yes, I am coming tonight.\""
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "Café owners in Zürich: etcetera versus the rest, see Figure 3 for details."
+   },
+   {
+    "para_id": "p",
+    "mood": "excited",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 800,
+    "source": "rules",
+    "text": "Mister Brown paid $3.50 for it. He left at 5 p.m. Then he came back... slowly. Really? Yes! Done."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "J. R. R. Tolkien wrote it, for example, in 1954. The end."
+   },
+   {
+    "para_id": "p",
+    "mood": "reflective",
+    "emphasis": [
+     "but"
+    ],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "A very long sentence with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, with many clauses, but it keeps going, and finally ends."
+   },
+   {
+    "para_id": "p",
+    "mood": "neutral",
+    "emphasis": [],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 420,
+    "source": "rules",
+    "text": "No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words No punctuation at all just words"
+   },
+   {
+    "para_id": "p",
+    "mood": "dialogue",
+    "emphasis": [
+     "Stop."
+    ],
+    "rate_delta": 0,
+    "pitch_delta": 0,
+    "pause_after_ms": 550,
+    "source": "rules",
+    "text": "Quote: \"Stop.\" He said so. (Really.) Okay."
+   }
+  ]
+ }
+}
